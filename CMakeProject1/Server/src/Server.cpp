@@ -9,6 +9,5 @@ using namespace std;
 int main()
 {
 	ServerManager srvman(5555,"127.0.0.1");
-	cout << srvman.GetIpAddress() << endl;
 	return 0;
 }
