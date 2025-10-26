@@ -26,6 +26,7 @@ if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET server PROPERTY CXX_STANDARD 20)
 endif()
 
+target_link_libraries(server PRIVATE Messages)
 target_link_libraries(server PRIVATE Boost::asio)
 
 # TODO: Dodaj testy i zainstaluj elementy docelowe w razie potrzeby.
