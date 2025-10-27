@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+
 class TextMessage : public IMessage {
 public:
     TextMessage() = default;

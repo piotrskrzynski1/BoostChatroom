@@ -2,6 +2,11 @@
 #include <vector>
 #include <string>
 
+enum class TextTypes : uint32_t {
+    Text,
+    Image
+};
+
 class IMessage {
 public:
     virtual ~IMessage() = default;

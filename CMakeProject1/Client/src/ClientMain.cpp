@@ -10,7 +10,7 @@ std::shared_ptr<tcp::socket> client_socket;
 
 void start_read();
 
-void handle_read(std::shared_ptr<std::vector<char>> buffer, // Zmieniono na std::vector<char>
+void handle_read_text(std::shared_ptr<std::vector<char>> buffer, // Zmieniono na std::vector<char>
     const boost::system::error_code& error,
     std::size_t bytes_transferred)
 {
@@ -48,12 +48,44 @@ void handle_read(std::shared_ptr<std::vector<char>> buffer, // Zmieniono na std:
 
 void start_read()
 {
-    auto buffer = std::make_shared<std::vector<char>>(1024);
+    auto buffertype = std::make_shared<std::vector<char>>();
+    buffertype->resize(sizeof(uint32_t));
 
-    client_socket->async_read_some(boost::asio::buffer(*buffer),
-        [buffer](const boost::system::error_code& err, std::size_t bytes)
+    boost::asio::async_read(*client_socket,boost::asio::buffer(*buffertype),
+        [buffertype](const boost::system::error_code& err, std::size_t bytes)
         {
-            handle_read(buffer, err, bytes);
+            auto buffersize = std::make_shared<std::vector<char>>();
+            buffersize->resize(sizeof(uint32_t));
+            boost::asio::async_read(*client_socket, boost::asio::buffer(*buffersize),
+                [buffertype, buffersize](const boost::system::error_code& err, std::size_t bytes) {
+                    uint32_t type;
+                    std::memcpy(&type, buffertype->data(), buffertype->size());
+                    type = ntohl(type);
+                    uint32_t length;
+                    std::memcpy(&length, buffersize->data(), buffersize->size());
+                    length = ntohl(length);
+                    auto text = std::make_shared<std::vector<char>>();
+                    text->resize(length);
+
+                    boost::asio::async_read(*client_socket, boost::asio::buffer(*text),
+                        [buffertype, buffersize, text, type, length](const boost::system::error_code& err, std::size_t bytes) {
+                            auto fulldata = std::make_shared<std::vector<char>>();
+                            fulldata->reserve(sizeof(uint32_t) * 2 + length);
+
+                            uint32_t net_type = htonl(type);
+                            uint32_t net_length = htonl(length);
+
+                            fulldata->insert(fulldata->end(), reinterpret_cast<char*>(&net_type),
+                                reinterpret_cast<char*>(&net_type) + sizeof(net_type));
+                            fulldata->insert(fulldata->end(), reinterpret_cast<char*>(&net_length),
+                                reinterpret_cast<char*>(&net_length) + sizeof(net_length));
+                            fulldata->insert(fulldata->end(), text->begin(), text->end());
+                            handle_read_text(fulldata, err, sizeof(uint32_t) * 2 + length);
+                        }
+                    );
+
+                }
+            );
         });
 }
 
