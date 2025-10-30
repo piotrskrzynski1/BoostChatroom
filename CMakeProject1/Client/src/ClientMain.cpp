@@ -1,40 +1,50 @@
 ﻿#include <iostream>
 #include <string>
 #include <memory>
+#include <vector>  
+#include <cstring>   
 #include <boost/asio.hpp>
 #include <MessageTypes/TextMessage.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <arpa/inet.h> // Dla ntohl, htonl
+#endif
+
 using boost::asio::ip::tcp;
 
 boost::asio::io_context io;
 std::shared_ptr<tcp::socket> client_socket;
 
-void start_read();
+void start_read_header();
+void start_read_body(std::shared_ptr<std::vector<char>> header_buffer, uint32_t body_length);
+void handle_read_text(std::shared_ptr<std::vector<char>> buffer,
+    const boost::system::error_code& error,
+    std::size_t bytes_transferred);
 
-void handle_read_text(std::shared_ptr<std::vector<char>> buffer, // Zmieniono na std::vector<char>
+
+
+void handle_read_text(std::shared_ptr<std::vector<char>> buffer,
     const boost::system::error_code& error,
     std::size_t bytes_transferred)
 {
     if (!error)
     {
-        // 1. Zmniejszenie bufora do faktycznie odczytanych bajtów
         buffer->resize(bytes_transferred);
 
-        // 2. Deserializacja
         TextMessage received_msg;
 
-        // zakladamy, że serwer wysyła tylko dane tekstowe
         try {
             received_msg.deserialize(*buffer);
 
-        // 3. Wyświetlenie przetworzonej wiadomości
             std::cout << "Server says (deserialized): " << received_msg.to_string() << std::endl;
-
         }
         catch (const std::exception& e) {
             std::cerr << "Deserialization error: " << e.what() << std::endl;
         }
 
-        start_read();
+        start_read_header();
     }
     else if (error == boost::asio::error::eof)
     {
@@ -46,48 +56,59 @@ void handle_read_text(std::shared_ptr<std::vector<char>> buffer, // Zmieniono na
     }
 }
 
-void start_read()
+
+void start_read_header()
 {
-    auto buffertype = std::make_shared<std::vector<char>>();
-    buffertype->resize(sizeof(uint32_t));
+    //początku każdej wiadomości składa się z dwóch liczb typu uint32_t. Pierwsza liczba oznacza typ druga ilosc bajtów
+    const size_t header_size = sizeof(uint32_t) * 2;
+    auto header_buffer = std::make_shared<std::vector<char>>(header_size);
 
-    boost::asio::async_read(*client_socket,boost::asio::buffer(*buffertype),
-        [buffertype](const boost::system::error_code& err, std::size_t bytes)
+    boost::asio::async_read(*client_socket, boost::asio::buffer(*header_buffer),
+        [header_buffer](const boost::system::error_code& err, std::size_t bytes_transferred)
         {
-            auto buffersize = std::make_shared<std::vector<char>>();
-            buffersize->resize(sizeof(uint32_t));
-            boost::asio::async_read(*client_socket, boost::asio::buffer(*buffersize),
-                [buffertype, buffersize](const boost::system::error_code& err, std::size_t bytes) {
-                    uint32_t type;
-                    std::memcpy(&type, buffertype->data(), buffertype->size());
-                    type = ntohl(type);
-                    uint32_t length;
-                    std::memcpy(&length, buffersize->data(), buffersize->size());
-                    length = ntohl(length);
-                    auto text = std::make_shared<std::vector<char>>();
-                    text->resize(length);
+            if (err)
+            {
+                handle_read_text(header_buffer, err, bytes_transferred);
+                return;
+            }
 
-                    boost::asio::async_read(*client_socket, boost::asio::buffer(*text),
-                        [buffertype, buffersize, text, type, length](const boost::system::error_code& err, std::size_t bytes) {
-                            auto fulldata = std::make_shared<std::vector<char>>();
-                            fulldata->reserve(sizeof(uint32_t) * 2 + length);
+            uint32_t body_length;
 
-                            uint32_t net_type = htonl(type);
-                            uint32_t net_length = htonl(length);
 
-                            fulldata->insert(fulldata->end(), reinterpret_cast<char*>(&net_type),
-                                reinterpret_cast<char*>(&net_type) + sizeof(net_type));
-                            fulldata->insert(fulldata->end(), reinterpret_cast<char*>(&net_length),
-                                reinterpret_cast<char*>(&net_length) + sizeof(net_length));
-                            fulldata->insert(fulldata->end(), text->begin(), text->end());
-                            handle_read_text(fulldata, err, sizeof(uint32_t) * 2 + length);
-                        }
-                    );
+            std::memcpy(&body_length, header_buffer->data() + sizeof(uint32_t), sizeof(uint32_t));
+            body_length = ntohl(body_length); 
 
-                }
-            );
+            if (body_length == 0)
+            {
+                handle_read_text(header_buffer, boost::system::error_code(), header_buffer->size());
+            }
+            else
+            {
+                start_read_body(header_buffer, body_length);
+            }
         });
 }
+
+void start_read_body(std::shared_ptr<std::vector<char>> header_buffer, uint32_t body_length)
+{
+    auto body_buffer = std::make_shared<std::vector<char>>(body_length);
+
+    boost::asio::async_read(*client_socket, boost::asio::buffer(*body_buffer),
+        [header_buffer, body_buffer](const boost::system::error_code& err, std::size_t bytes_transferred)
+        {
+            if (err)
+            {
+                handle_read_text(body_buffer, err, bytes_transferred);
+                return;
+            }
+
+            auto fulldata = std::make_shared<std::vector<char>>(*header_buffer);
+            fulldata->insert(fulldata->end(), body_buffer->begin(), body_buffer->end());
+
+            handle_read_text(fulldata, boost::system::error_code(), fulldata->size());
+        });
+}
+
 
 void handle_connect(const boost::system::error_code& error)
 {
@@ -97,7 +118,7 @@ void handle_connect(const boost::system::error_code& error)
         std::cout << "Server ip: " << client_socket->remote_endpoint().address()
             << " Server port: " << client_socket->remote_endpoint().port() << std::endl;
 
-        start_read();
+        start_read_header();
     }
     else
     {
