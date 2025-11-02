@@ -14,6 +14,7 @@ class ServerManager {
 		std::mutex clients_mutex_;
 		MessageReciever messageReciever_;
 		void DoAccept(std::shared_ptr<tcp::acceptor> acceptor);
+		void Broadcast(std::shared_ptr<tcp::socket> sender, const std::string& text);
 	protected:
 		unsigned int port;
 

@@ -3,6 +3,13 @@
 #include <MessageTypes/Interface/IMessage.hpp>
 #include <MessageTypes/TextMessage.h>
 #include <iostream>
+
+#ifdef _DEBUG
+#define LOG(x) std::cout << "[DEBUG] " << x << std::endl
+#else
+#define LOG(x) ((void)0)
+#endif
+
     void Utils::SendMessage(std::shared_ptr<boost::asio::ip::tcp::socket> socket,
         std::shared_ptr<IMessage> message,
         const boost::system::error_code& error)
@@ -16,10 +23,9 @@
             {
                 if (!ec)
                 {
-                    std::cout << "Sent message to client.\n"
-                        << "Client ip: " << socket->remote_endpoint().address()
-                        << " client port: " << socket->remote_endpoint().port()
-                        << std::endl;
+                    LOG("Sent message to target.\n");
+                    LOG("Target ip: " + socket->remote_endpoint().address().to_string());
+                    LOG("Target port: " + socket->remote_endpoint().port());
                 }
                 else
                 {

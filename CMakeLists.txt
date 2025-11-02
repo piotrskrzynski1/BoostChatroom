@@ -12,6 +12,6 @@ endif()
 project ("ChatApp")
 
 # Uwzględnij podprojekty.
-add_subdirectory("CMakeProject1/Common")
+add_subdirectory("CMakeProject1/Shared")
 add_subdirectory("CMakeProject1/Client")
 add_subdirectory("CMakeProject1/Server")
