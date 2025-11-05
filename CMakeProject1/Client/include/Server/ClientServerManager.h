@@ -6,14 +6,14 @@
 #include <Server/MessageReciever.h>
 class ClientServerManager {
 private:
-	MessageReciever messageReciever_;
+	MessageReciever messageReceiver_;
 	void handle_connect(const boost::system::error_code& error);
 	protected:
 	boost::asio::ip::tcp::endpoint endpoint;
 	std::shared_ptr<boost::asio::ip::tcp::socket> client_socket;
 
 	public:
-	void Disconnect();
-	ClientServerManager(boost::asio::io_context& io);
-	void Message(std::shared_ptr<IMessage> message);
+	void Disconnect() const;
+	explicit ClientServerManager(boost::asio::io_context& io);
+	void Message(const std::shared_ptr<IMessage>& message) const;
 };

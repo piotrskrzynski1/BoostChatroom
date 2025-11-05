@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 
-find_package(Boost REQUIRED COMPONENTS asio)
+find_package(Boost REQUIRED COMPONENTS system filesystem)
 
 file(GLOB_RECURSE MESSAGE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
@@ -14,7 +14,6 @@ target_include_directories(Messages PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-
-target_link_libraries(Messages PUBLIC Boost::asio)
+target_include_directories(Messages PRIVATE ${Boost_INCLUDE_DIRS})
 
 message(STATUS "Messages library sources: ${MESSAGE_SOURCES}")

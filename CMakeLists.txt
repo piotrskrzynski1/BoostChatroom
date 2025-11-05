@@ -3,6 +3,10 @@
 #
 cmake_minimum_required (VERSION 3.10)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 # Włącz przeładowywanie kodu XAML na gorąco dla kompilatorów MSVC, jeśli jest to obsługiwane.
 if (POLICY CMP0141)
   cmake_policy(SET CMP0141 NEW)
@@ -10,6 +14,7 @@ if (POLICY CMP0141)
 endif()
 
 project ("ChatApp")
+
 
 # Uwzględnij podprojekty.
 add_subdirectory("CMakeProject1/Shared")

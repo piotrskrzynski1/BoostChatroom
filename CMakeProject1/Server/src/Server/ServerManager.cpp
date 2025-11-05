@@ -21,17 +21,20 @@ ServerManager::ServerManager(int port, std::string&& ipAddress)
 
     // register callback so server broadcasts on incoming messages
     messageReciever_.set_on_message_callback(
-        [this](std::shared_ptr<boost::asio::ip::tcp::socket> sender, const std::string& msg) {
-        this->Broadcast(sender, msg);
-    }
+        [this](std::shared_ptr<boost::asio::ip::tcp::socket> sender, const std::string& msg)
+        {
+            this->Broadcast(sender, msg);
+        }
     );
 }
 
 void ServerManager::StartServer()
 {
-    messageReciever_.set_on_message_callback([this](std::shared_ptr<boost::asio::ip::tcp::socket> sender, const std::string& msg) {
-        this->Broadcast(sender, msg);
-    });
+    messageReciever_.set_on_message_callback(
+        [this](std::shared_ptr<boost::asio::ip::tcp::socket> sender, const std::string& msg)
+        {
+            this->Broadcast(sender, msg);
+        });
     try
     {
         // Create acceptor on the heap so it lives for the duration of async ops
@@ -49,7 +52,8 @@ void ServerManager::StartServer()
 
         for (unsigned int i = 0; i < thread_count; ++i)
         {
-            threads.emplace_back([this]() {
+            threads.emplace_back([this]()
+            {
                 io_context.run();
             });
         }
@@ -69,91 +73,101 @@ void ServerManager::DoAccept(std::shared_ptr<tcp::acceptor> acceptor)
 
     acceptor->async_accept(*socket, [this, acceptor, socket](const boost::system::error_code& error)
     {
-        if (!error)
+        if (error) std::cerr << "Accept failed: " << error.message() << "\n";
+
         {
+            std::scoped_lock lock(clients_mutex_);
+            bool exists = false;
+            for (auto& s : clients_)
             {
-                std::scoped_lock lock(clients_mutex_);
-                bool exists = false;
-                for (auto& s : clients_) {
-                    if (s && s->native_handle() == socket->native_handle()) { exists = true; break; }
-                }
-                if (!exists) clients_.push_back(socket);
-            }
-
-            // start async read on the new connection (do not rely on recvStr from accept)
-            messageReciever_.start_read_header(socket, nullptr);
-
-            // greet the new client
-            auto helloMessage = std::make_shared<TextMessage>("Hello client");
-            boost::system::error_code sendErr;
-            Utils::SendMessage(socket, helloMessage, sendErr);
-            if (sendErr)
-                std::cerr << "ERROR sending hello: " << sendErr.message() << std::endl;
-
-            // debug dump of clients
-            {
-                std::scoped_lock lock(clients_mutex_);
-                for (const auto& s : clients_) {
-                    boost::system::error_code ec1, ec2;
-                    auto remote = s->remote_endpoint(ec1);
-                    auto local = s->local_endpoint(ec2);
-                    std::cout << " clientsock: "
-                        << (ec1 ? std::string("<err>") : remote.address().to_string())
-                        << " " << (ec1 ? 0 : remote.port())
-                        << " (local " << (ec2 ? std::string("<err>") : local.address().to_string())
-                        << ":" << (ec2 ? 0 : local.port()) << ")" << std::endl;
+                if (s && s->native_handle() == socket->native_handle())
+                {
+                    exists = true;
+                    break;
                 }
             }
+            if (!exists) clients_.push_back(socket);
         }
-        else
+
+        // start async read on the new connection (do not rely on recvStr from accept)
+        messageReciever_.start_read_header(socket, nullptr);
+
+        // greet the new client
+        auto helloMessage = std::make_shared<TextMessage>("Hello client");
+        boost::system::error_code sendErr;
+        Utils::SendMessage(socket, helloMessage, sendErr);
+        if (sendErr) std::cerr << "ERROR sending hello: " << sendErr.message() << std::endl;
+
+        // debug dump of clients
         {
-            std::cerr << "Accept failed: " << error.message() << "\n";
+            std::scoped_lock lock(clients_mutex_);
+            for (const auto& s : clients_)
+            {
+                boost::system::error_code ec1, ec2;
+                auto remote = s->remote_endpoint(ec1);
+                auto local = s->local_endpoint(ec2);
+                std::cout << " clientsock: "
+                    << (ec1 ? std::string("<err>") : remote.address().to_string())
+                    << " " << (ec1 ? 0 : remote.port())
+                    << " (local " << (ec2 ? std::string("<err>") : local.address().to_string())
+                    << ":" << (ec2 ? 0 : local.port()) << ")" << std::endl;
+            }
         }
+
         DoAccept(acceptor);
     });
 }
 
-void ServerManager::Broadcast(std::shared_ptr<tcp::socket> sender, const std::string& text) {
+void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender, const std::string& text)
+{
     std::vector<std::shared_ptr<tcp::socket>> clientsCopy;
     {
         std::scoped_lock lock(clients_mutex_);
         // remove closed sockets
         clients_.erase(std::remove_if(clients_.begin(), clients_.end(),
-            [](const auto& s) { return !s || !s->is_open(); }), clients_.end());
+                                      [](const auto& s) { return !s || !s->is_open(); }), clients_.end());
         clientsCopy = clients_;
     }
 
     boost::system::error_code ec;
     auto sender_ep = sender->remote_endpoint(ec);
 
-    for (const auto& clientSock : clientsCopy) {
-        try {
+    for (const auto& clientSock : clientsCopy)
+    {
+        try
+        {
             if (!clientSock || !clientSock->is_open()) continue;
             if (clientSock->native_handle() == sender->native_handle()) continue;
 
-            std::string prefix = ec ? "<unknown>" :
-                sender_ep.address().to_string() + ":" + std::to_string(sender_ep.port());
+            std::string prefix = ec
+                                     ? "<unknown>"
+                                     : sender_ep.address().to_string() + ":" + std::to_string(sender_ep.port());
             auto msg = std::make_shared<TextMessage>(prefix + ": " + text);
 
             boost::system::error_code sendErr;
             Utils::SendMessage(clientSock, msg, sendErr);
-            if (sendErr) {
+            if (sendErr)
+            {
                 std::cerr << "ERROR sending to client: " << sendErr.message() << std::endl;
             }
-            else {
+            else
+            {
                 LOG("Sent message to client.");
             }
         }
-        catch (const std::exception& ex) {
+        catch (const std::exception& ex)
+        {
             std::cerr << "Exception while notifying clients: " << ex.what() << std::endl;
         }
     }
 }
 
-int ServerManager::GetPort() {
+int ServerManager::GetPort() const
+{
     return this->port;
 }
 
-std::string ServerManager::GetIpAddress() {
+std::string ServerManager::GetIpAddress()
+{
     return this->address;
 }
