@@ -1,54 +1,58 @@
 // TextMessage.cpp
-#include "MessageTypes/TextMessage.h"
+#include "../../../include/MessageTypes/Text/TextMessage.h"
 
 #include <cstdint>
+#include <iostream>
+#include <boost/asio/buffer.hpp>
+
 #if defined(_WIN32) || defined(_WIN64)
 #include <winsock2.h>
 #else
 #include <arpa/inet.h>
 #endif
+
+#include <MessageTypes/Utilities/HeaderHelper.h>
+
 // Constructor
 TextMessage::TextMessage(const std::string& text) : text_(text)
 {
+    if (text_.size() > std::numeric_limits<uint64_t>::max()) {
+        throw std::runtime_error("Text too long to serialize");
+    }
 }
 
 // Serialize string into bytes
 std::vector<char> TextMessage::serialize() const
 {
     uint32_t id = (uint32_t)TextTypes::Text;
-    uint32_t length = text_.size();
+    uint64_t length = text_.size();
 
-    id = htonl(id);
-    length = htonl(length);
 
     size_t total_size = sizeof(id) + sizeof(length) + length;
 
     std::vector<char> buffer;
     buffer.reserve(total_size);
 
-    const char* id_bytes = reinterpret_cast<const char*>(&id);
-    buffer.insert(buffer.end(), id_bytes, id_bytes + sizeof(id));
-    const char* length_bytes = reinterpret_cast<const char*>(&length);
-    buffer.insert(buffer.end(), length_bytes, length_bytes + sizeof(length));
+    Utils::HeaderHelper::append_u32(buffer,id);
+    Utils::HeaderHelper::append_u64(buffer,length);
     buffer.insert(buffer.end(), text_.begin(), text_.end());
     return buffer;
 }
 
 void TextMessage::deserialize(const std::vector<char>& data)
 {
+
     if (data.size() < (2 * sizeof(uint32_t))) return;
 
 
-    uint32_t net_id;
-    std::copy(data.begin(), data.begin() + sizeof(uint32_t), reinterpret_cast<char*>(&net_id));
-    uint32_t id = ntohl(net_id);
+    uint32_t id;
+    Utils::HeaderHelper::read_u32(data,0,id);
 
-    uint32_t net_length;
-    std::copy(data.begin() + sizeof(uint32_t), data.begin() + (2 * sizeof(uint32_t)),
-              reinterpret_cast<char*>(&net_length));
-    uint32_t length = ntohl(net_length);
+    uint64_t length = 0;
+    Utils::HeaderHelper::read_u64(data,sizeof(uint32_t),length);
 
-    size_t expected_data_start = 2 * sizeof(uint32_t);
+    if (!length) {std::cerr << "net_length is null" << std::endl; return;}
+    size_t expected_data_start = sizeof(id) + sizeof(length);
     if (data.size() < expected_data_start + length) return;
 
 

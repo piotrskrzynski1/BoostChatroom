@@ -4,6 +4,8 @@
 #include <Server/ServerMessageSender.h>
 #include <algorithm>
 
+#include "MessageTypes/Text/TextMessage.h"
+
 using boost::asio::ip::tcp;
 
 #ifdef _DEBUG
@@ -12,16 +14,17 @@ using boost::asio::ip::tcp;
 #define LOG(x) ((void)0)
 #endif
 
-ServerManager::ServerManager(int port, std::string&& ipAddress)
+ServerManager::ServerManager(int port,int fileport, std::string&& ipAddress)
 {
     this->port = port;
+    this->fileport = fileport;
     this->address = std::move(ipAddress);
     std::cout << "Server configured at address: " << this->address
         << " Port: " << this->port << std::endl;
 
     // register callback so server broadcasts on incoming messages
     messageReciever_.set_on_message_callback(
-        [this](std::shared_ptr<boost::asio::ip::tcp::socket> sender, const std::string& msg)
+        [this](const std::shared_ptr<boost::asio::ip::tcp::socket>& sender, const std::string& msg)
         {
             this->Broadcast(sender, msg);
         }
@@ -31,7 +34,7 @@ ServerManager::ServerManager(int port, std::string&& ipAddress)
 void ServerManager::StartServer()
 {
     messageReciever_.set_on_message_callback(
-        [this](std::shared_ptr<boost::asio::ip::tcp::socket> sender, const std::string& msg)
+        [this](const std::shared_ptr<boost::asio::ip::tcp::socket>& sender, const std::string& msg)
         {
             this->Broadcast(sender, msg);
         });
@@ -41,9 +44,12 @@ void ServerManager::StartServer()
         auto acceptor = std::make_shared<tcp::acceptor>(
             io_context,
             tcp::endpoint(boost::asio::ip::make_address_v4(this->address), this->port));
-
+        auto fileacceptor = std::make_shared<tcp::acceptor>(
+            io_context,
+            tcp::endpoint(boost::asio::ip::make_address_v4(this->address),this->fileport));
         // Start accepting first connection
         DoAccept(acceptor);
+        DoAcceptFile(fileacceptor);
 
         // Run io_context on multiple threads
         const unsigned int thread_count = std::max(4u, std::thread::hardware_concurrency());
@@ -76,9 +82,9 @@ void ServerManager::DoAccept(std::shared_ptr<tcp::acceptor> acceptor)
         if (error) std::cerr << "Accept failed: " << error.message() << "\n";
 
         {
-            std::scoped_lock lock(clients_mutex_);
+            std::scoped_lock lock(text_port_clients_mutex_);
             bool exists = false;
-            for (auto& s : clients_)
+            for (auto& s : text_port_clients_)
             {
                 if (s && s->native_handle() == socket->native_handle())
                 {
@@ -86,7 +92,7 @@ void ServerManager::DoAccept(std::shared_ptr<tcp::acceptor> acceptor)
                     break;
                 }
             }
-            if (!exists) clients_.push_back(socket);
+            if (!exists) text_port_clients_.push_back(socket);
         }
 
         // start async read on the new connection (do not rely on recvStr from accept)
@@ -100,8 +106,8 @@ void ServerManager::DoAccept(std::shared_ptr<tcp::acceptor> acceptor)
 
         // debug dump of clients
         {
-            std::scoped_lock lock(clients_mutex_);
-            for (const auto& s : clients_)
+            std::scoped_lock lock(text_port_clients_mutex_);
+            for (const auto& s : text_port_clients_)
             {
                 boost::system::error_code ec1, ec2;
                 auto remote = s->remote_endpoint(ec1);
@@ -118,15 +124,60 @@ void ServerManager::DoAccept(std::shared_ptr<tcp::acceptor> acceptor)
     });
 }
 
+void ServerManager::DoAcceptFile(std::shared_ptr<tcp::acceptor> acceptor)
+{
+    auto socket = std::make_shared<tcp::socket>(io_context);
+
+    acceptor->async_accept(*socket, [this, acceptor, socket](const boost::system::error_code& error)
+    {
+        if (error) std::cerr << "Accept failed: " << error.message() << "\n";
+
+        {
+            std::scoped_lock lock(file_port_clients_mutex_);
+            bool exists = false;
+            for (auto& s : file_port_clients_)
+            {
+                if (s && s->native_handle() == socket->native_handle())
+                {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) file_port_clients_.push_back(socket);
+        }
+
+        // start async read on the new connection (do not rely on recvStr from accept)
+        messageReciever_.start_read_header(socket, nullptr);
+
+        // debug dump of file port clients
+        {
+            std::scoped_lock lock(file_port_clients_mutex_);
+            for (const auto& s : file_port_clients_)
+            {
+                boost::system::error_code ec1, ec2;
+                auto remote = s->remote_endpoint(ec1);
+                auto local = s->local_endpoint(ec2);
+                std::cout << " fileport clientsock: "
+                    << (ec1 ? std::string("<err>") : remote.address().to_string())
+                    << " " << (ec1 ? 0 : remote.port())
+                    << " (local " << (ec2 ? std::string("<err>") : local.address().to_string())
+                    << ":" << (ec2 ? 0 : local.port()) << ")" << std::endl;
+            }
+        }
+
+        DoAcceptFile(acceptor);
+    });
+}
+
 void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender, const std::string& text)
 {
     std::vector<std::shared_ptr<tcp::socket>> clientsCopy;
     {
-        std::scoped_lock lock(clients_mutex_);
+        std::scoped_lock lock(text_port_clients_mutex_);
         // remove closed sockets
-        clients_.erase(std::remove_if(clients_.begin(), clients_.end(),
-                                      [](const auto& s) { return !s || !s->is_open(); }), clients_.end());
-        clientsCopy = clients_;
+        text_port_clients_.erase(std::remove_if(text_port_clients_.begin(), text_port_clients_.end(),
+                                      [](const auto& s) { return !s || !s->is_open(); }), text_port_clients_.end());
+        clientsCopy = text_port_clients_;
     }
 
     boost::system::error_code ec;

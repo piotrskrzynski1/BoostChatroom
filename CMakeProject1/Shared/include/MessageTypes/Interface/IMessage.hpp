@@ -4,8 +4,8 @@
 #include <cstdint>
 
 enum class TextTypes : uint32_t {
-    Text,
-    Image
+    Text = 0,
+    File = 1,
 };
 
 class IMessage {
@@ -20,4 +20,9 @@ public:
 
     // Optional: get a human-readable representation
     virtual std::string to_string() const = 0;
+
+    virtual void save_file()
+    {
+
+    };
 };

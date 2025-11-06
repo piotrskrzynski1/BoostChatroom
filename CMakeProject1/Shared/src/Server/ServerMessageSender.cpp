@@ -1,7 +1,7 @@
 #include <Server/ServerMessageSender.h>
 #include <boost/asio.hpp>
 #include <MessageTypes/Interface/IMessage.hpp>
-#include <MessageTypes/TextMessage.h>
+#include <MessageTypes/Text/TextMessage.h>
 #include <iostream>
 
 #ifdef _DEBUG
@@ -12,7 +12,7 @@
 
 void Utils::SendMessage(const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
                         const std::shared_ptr<IMessage>& message,
-                        const boost::system::error_code& error)
+                        boost::system::error_code& error)
 {
     if (error) {std::cerr << "Accept failed: " << error.message() << "\n"; return;}
     auto data = std::make_shared<std::vector<char>>(message->serialize());
