@@ -147,7 +147,7 @@ void ServerManager::DoAcceptFile(std::shared_ptr<tcp::acceptor> acceptor)
         }
 
         // start async read on the new connection (do not rely on recvStr from accept)
-        messageReciever_.start_read_header(socket, nullptr);
+        fileReciever.start_read_header(socket, nullptr);
 
         // debug dump of file port clients
         {

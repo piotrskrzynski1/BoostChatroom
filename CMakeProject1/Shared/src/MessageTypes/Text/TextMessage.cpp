@@ -24,20 +24,21 @@ TextMessage::TextMessage(const std::string& text) : text_(text)
 // Serialize string into bytes
 std::vector<char> TextMessage::serialize() const
 {
-    uint32_t id = (uint32_t)TextTypes::Text;
-    uint64_t length = text_.size();
+    const uint32_t id = static_cast<uint32_t>(TextTypes::Text);
+    const uint64_t length = text_.size();
 
-
-    size_t total_size = sizeof(id) + sizeof(length) + length;
+    const size_t total_size = sizeof(id) + sizeof(length) + length;
 
     std::vector<char> buffer;
     buffer.reserve(total_size);
 
-    Utils::HeaderHelper::append_u32(buffer,id);
-    Utils::HeaderHelper::append_u64(buffer,length);
+    Utils::HeaderHelper::append_u32(buffer, id);
+    Utils::HeaderHelper::append_u64(buffer, length);
     buffer.insert(buffer.end(), text_.begin(), text_.end());
+
     return buffer;
 }
+
 
 void TextMessage::deserialize(const std::vector<char>& data)
 {

@@ -70,7 +70,7 @@ void ClientServerManager::Disconnect() const
         if (ec)
             std::cerr << name << " close error: " << ec.message() << std::endl;
         else
-            std::cout << "🔌 " << name << " disconnected successfully.\n";
+            std::cout << name << " disconnected successfully.\n";
     };
 
     disconnect_socket(client_socket, "TextSocket");
@@ -99,7 +99,7 @@ void ClientServerManager::Message(TextTypes type, const std::shared_ptr<IMessage
             break;
 
         default:
-            std::cerr << "⚠Unknown message type.\n";
+            std::cerr << "Unknown message type.\n";
             break;
     }
 

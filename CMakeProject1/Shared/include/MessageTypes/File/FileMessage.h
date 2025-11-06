@@ -17,5 +17,5 @@ public:
     std::vector<char> serialize() const override;
     void deserialize(const std::vector<char>& data) override;
     std::string to_string() const override;
-    void save_file() const;
+    void save_file() const override;
 };

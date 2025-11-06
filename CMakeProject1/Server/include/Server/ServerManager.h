@@ -16,6 +16,7 @@ private:
     std::mutex text_port_clients_mutex_;
     std::mutex file_port_clients_mutex_;
     MessageReciever messageReciever_;
+    MessageReciever fileReciever;
     void DoAccept(std::shared_ptr<tcp::acceptor> acceptor);
     void DoAcceptFile(std::shared_ptr<tcp::acceptor> acceptor);
     void Broadcast(const std::shared_ptr<tcp::socket>& sender, const std::string& text);

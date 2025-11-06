@@ -56,6 +56,7 @@ struct HeaderHelper {
         value = ntohll(net);
         return true;
     }
+
 };
 
 } // namespace Utils

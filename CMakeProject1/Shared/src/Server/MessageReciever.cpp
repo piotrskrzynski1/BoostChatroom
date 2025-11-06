@@ -70,12 +70,13 @@ void MessageReciever::handle_read_message(std::shared_ptr<std::vector<char>> buf
         uint32_t id;
         Utils::HeaderHelper::read_u32(*buffer, 0, id);
 
+        std::cout << "id: " << id << std::endl;
         auto message = MessageFactory::create_from_id(id);
         message->deserialize(*buffer);
 
         std::string message_str = message->to_string();
         std::cout << message_str << std::endl;
-
+        std::cout << typeid(message).name() << std::endl;
         message->save_file();
 
         if (on_message) on_message(socket, message_str);
@@ -113,7 +114,7 @@ void MessageReciever::start_read_header(std::shared_ptr<boost::asio::ip::tcp::so
             std::memcpy(&id, header_buffer->data(), sizeof(uint32_t));
             id = ntohl(id);
             std::memcpy(&body_length, header_buffer->data() + sizeof(uint32_t), sizeof(uint64_t));
-            body_length = ntohll(body_length);   // ✅ fixed 64-bit conversion
+            body_length = ntohll(body_length);   // 64-bit conversion
 
             if (body_length != 0) {
                 start_read_body(header_buffer, body_length, socket, napis);
