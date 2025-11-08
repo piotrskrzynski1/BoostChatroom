@@ -1,7 +1,7 @@
 #include <fstream>
 #include <iostream>
 #include <MessageTypes/File/FileMessage.h>
-#include <MessageTypes/Utilities/HeaderHelper.h>
+#include <MessageTypes/Utilities/HeaderHelper.hpp>
 
 FileMessage::FileMessage(const std::filesystem::path& path)
 {

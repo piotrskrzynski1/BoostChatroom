@@ -2,7 +2,7 @@
 #include <MessageTypes/Text/TextMessage.h>
 #include <cstring>
 #include <iostream>
-#include <MessageTypes/Utilities/HeaderHelper.h>
+#include <MessageTypes/Utilities/HeaderHelper.hpp>
 #include <MessageTypes/Utilities/MessageFactory.h>
 
 #ifdef _DEBUG
@@ -56,13 +56,24 @@ void MessageReciever::handle_read_message(std::shared_ptr<std::vector<char>> buf
                                           std::shared_ptr<boost::asio::ip::tcp::socket> socket,
                                           std::shared_ptr<std::string> napis)
 {
+    if (error) {
     if (error == boost::asio::error::eof) {
-        std::cout << "Server closed the connection.\n";
-        return;
-    } else if (error) {
+        std::cout << "Client closed the connection.\n";
+    } else {
         std::cerr << "Read error: " << error.message() << std::endl;
-        return;
     }
+
+    // make a best-effort to close socket and stop reading further
+    boost::system::error_code ec;
+    socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+    socket->close(ec);
+
+    // If you have a callback to notify the server to remove/cleanup this socket, call it here.
+    // e.g. if (on_disconnect) on_disconnect(socket);
+
+    return;
+}
+
 
     buffer->resize(bytes_transferred);
 
@@ -70,13 +81,17 @@ void MessageReciever::handle_read_message(std::shared_ptr<std::vector<char>> buf
         uint32_t id;
         Utils::HeaderHelper::read_u32(*buffer, 0, id);
 
+#ifdef _DEBUG
         std::cout << "id: " << id << std::endl;
+#endif
         auto message = MessageFactory::create_from_id(id);
         message->deserialize(*buffer);
 
         std::string message_str = message->to_string();
         std::cout << message_str << std::endl;
+#ifdef _DEBUG
         std::cout << typeid(message).name() << std::endl;
+#endif
         message->save_file();
 
         if (on_message) on_message(socket, message_str);

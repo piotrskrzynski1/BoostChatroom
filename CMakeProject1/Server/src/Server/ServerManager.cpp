@@ -14,26 +14,24 @@ using boost::asio::ip::tcp;
 #define LOG(x) ((void)0)
 #endif
 
-ServerManager::ServerManager(int port,int fileport, std::string&& ipAddress)
+ServerManager::ServerManager(int port, int fileport, std::string&& ipAddress)
 {
     this->port = port;
     this->fileport = fileport;
     this->address = std::move(ipAddress);
     std::cout << "Server configured at address: " << this->address
-        << " Port: " << this->port << std::endl;
-
-    // register callback so server broadcasts on incoming messages
-    messageReciever_.set_on_message_callback(
-        [this](const std::shared_ptr<boost::asio::ip::tcp::socket>& sender, const std::string& msg)
-        {
-            this->Broadcast(sender, msg);
-        }
-    );
+        << "\nText Port: " << port << "\nFile Port:" << this->fileport << std::endl;
 }
+
 
 void ServerManager::StartServer()
 {
     messageReciever_.set_on_message_callback(
+        [this](const std::shared_ptr<boost::asio::ip::tcp::socket>& sender, const std::string& msg)
+        {
+            this->Broadcast(sender, msg);
+        });
+    fileReciever.set_on_message_callback(
         [this](const std::shared_ptr<boost::asio::ip::tcp::socket>& sender, const std::string& msg)
         {
             this->Broadcast(sender, msg);
@@ -44,14 +42,16 @@ void ServerManager::StartServer()
         auto acceptor = std::make_shared<tcp::acceptor>(
             io_context,
             tcp::endpoint(boost::asio::ip::make_address_v4(this->address), this->port));
+
         auto fileacceptor = std::make_shared<tcp::acceptor>(
             io_context,
-            tcp::endpoint(boost::asio::ip::make_address_v4(this->address),this->fileport));
-        // Start accepting first connection
-        DoAccept(acceptor);
-        DoAcceptFile(fileacceptor);
+            tcp::endpoint(boost::asio::ip::make_address_v4(this->address), this->fileport));
 
-        // Run io_context on multiple threads
+        // Start accepting first connection
+        AcceptTextConnection(acceptor);
+        AcceptFileConnection(fileacceptor);
+
+        // Make a threadpool to run io_context tasks with (remember about locks)
         const unsigned int thread_count = std::max(4u, std::thread::hardware_concurrency());
         std::vector<std::thread> threads;
         threads.reserve(thread_count);
@@ -73,7 +73,7 @@ void ServerManager::StartServer()
     }
 }
 
-void ServerManager::DoAccept(std::shared_ptr<tcp::acceptor> acceptor)
+void ServerManager::AcceptTextConnection(const std::shared_ptr<tcp::acceptor>& acceptor)
 {
     auto socket = std::make_shared<tcp::socket>(io_context);
 
@@ -120,18 +120,20 @@ void ServerManager::DoAccept(std::shared_ptr<tcp::acceptor> acceptor)
             }
         }
 
-        DoAccept(acceptor);
+        AcceptTextConnection(acceptor);
     });
 }
 
-void ServerManager::DoAcceptFile(std::shared_ptr<tcp::acceptor> acceptor)
+void ServerManager::AcceptFileConnection(const std::shared_ptr<tcp::acceptor>& acceptor)
 {
     auto socket = std::make_shared<tcp::socket>(io_context);
 
+    //listen for clients connecting and accept as soon as they try to establish a handshake
     acceptor->async_accept(*socket, [this, acceptor, socket](const boost::system::error_code& error)
     {
         if (error) std::cerr << "Accept failed: " << error.message() << "\n";
 
+        //lock so the thread doesnt go boom, check if client isn't already connected
         {
             std::scoped_lock lock(file_port_clients_mutex_);
             bool exists = false;
@@ -146,9 +148,10 @@ void ServerManager::DoAcceptFile(std::shared_ptr<tcp::acceptor> acceptor)
             if (!exists) file_port_clients_.push_back(socket);
         }
 
-        // start async read on the new connection (do not rely on recvStr from accept)
+        // start async read on the new connection
         fileReciever.start_read_header(socket, nullptr);
 
+#ifdef _DEBUG
         // debug dump of file port clients
         {
             std::scoped_lock lock(file_port_clients_mutex_);
@@ -164,8 +167,9 @@ void ServerManager::DoAcceptFile(std::shared_ptr<tcp::acceptor> acceptor)
                     << ":" << (ec2 ? 0 : local.port()) << ")" << std::endl;
             }
         }
+#endif
 
-        DoAcceptFile(acceptor);
+        AcceptFileConnection(acceptor);
     });
 }
 
@@ -176,7 +180,8 @@ void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender, const 
         std::scoped_lock lock(text_port_clients_mutex_);
         // remove closed sockets
         text_port_clients_.erase(std::remove_if(text_port_clients_.begin(), text_port_clients_.end(),
-                                      [](const auto& s) { return !s || !s->is_open(); }), text_port_clients_.end());
+                                                [](const auto& s) { return !s || !s->is_open(); }),
+                                 text_port_clients_.end());
         clientsCopy = text_port_clients_;
     }
 

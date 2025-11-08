@@ -17,8 +17,8 @@ private:
     std::mutex file_port_clients_mutex_;
     MessageReciever messageReciever_;
     MessageReciever fileReciever;
-    void DoAccept(std::shared_ptr<tcp::acceptor> acceptor);
-    void DoAcceptFile(std::shared_ptr<tcp::acceptor> acceptor);
+    void AcceptTextConnection(const std::shared_ptr<tcp::acceptor>& acceptor);
+    void AcceptFileConnection(const std::shared_ptr<tcp::acceptor>& acceptor);
     void Broadcast(const std::shared_ptr<tcp::socket>& sender, const std::string& text);
 
 protected:
@@ -30,7 +30,7 @@ protected:
 public:
     std::string GetIpAddress();
 
-    ServerManager(int port,int fileport, std::string&& ipAddress);
+    ServerManager(int port, int fileport, std::string&& ipAddress);
     void StartServer();
     int GetPort() const;
 };

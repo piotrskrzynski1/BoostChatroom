@@ -11,7 +11,7 @@
 #include <arpa/inet.h>
 #endif
 
-#include <MessageTypes/Utilities/HeaderHelper.h>
+#include <MessageTypes/Utilities/HeaderHelper.hpp>
 
 // Constructor
 TextMessage::TextMessage(const std::string& text) : text_(text)
