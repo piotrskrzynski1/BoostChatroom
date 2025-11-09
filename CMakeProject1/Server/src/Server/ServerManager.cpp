@@ -3,8 +3,9 @@
 #include <thread>
 #include <Server/ServerMessageSender.h>
 #include <algorithm>
-
-#include "MessageTypes/Text/TextMessage.h"
+#include <boost/asio.hpp>
+#include <MessageTypes/Text/TextMessage.h>
+#include <MessageTypes/File/FileMessage.h>
 
 using boost::asio::ip::tcp;
 
@@ -20,52 +21,59 @@ ServerManager::ServerManager(int port, int fileport, std::string&& ipAddress)
     this->fileport = fileport;
     this->address = std::move(ipAddress);
     std::cout << "Server configured at address: " << this->address
-        << "\nText Port: " << port << "\nFile Port:" << this->fileport << std::endl;
+              << "\nText Port: " << port << "\nFile Port: " << this->fileport << std::endl;
 }
 
+std::string ServerManager::GetIpAddress() { return this->address; }
+int ServerManager::GetPort() const { return this->port; }
 
 void ServerManager::StartServer()
 {
+    // Text messages callback
     messageReciever_.set_on_message_callback(
-        [this](const std::shared_ptr<boost::asio::ip::tcp::socket>& sender, const std::string& msg)
+        [this](const std::shared_ptr<tcp::socket>& sender, const std::string& msg)
         {
             this->Broadcast(sender, msg);
         });
-    fileReciever.set_on_message_callback(
-        [this](const std::shared_ptr<boost::asio::ip::tcp::socket>& sender, const std::string& msg)
+
+    // File messages callback (use vector<char> to avoid truncation)
+    fileReciever.set_on_file_callback(
+        [this](const std::shared_ptr<tcp::socket>& sender, const std::shared_ptr<std::vector<char>>& rawData)
         {
-            this->Broadcast(sender, msg);
+            this->Broadcast(sender, rawData);
         });
+
     try
     {
-        // Create acceptor on the heap so it lives for the duration of async ops
-        auto acceptor = std::make_shared<tcp::acceptor>(
+        // ✅ FIX: Reset context if it was stopped from a previous run
+        if (io_context.stopped()) {
+            io_context.reset();
+        }
+
+        // ✅ FIX: Use member variables for acceptors
+        acceptor_ = std::make_shared<tcp::acceptor>(
             io_context,
             tcp::endpoint(boost::asio::ip::make_address_v4(this->address), this->port));
 
-        auto fileacceptor = std::make_shared<tcp::acceptor>(
+        file_acceptor_ = std::make_shared<tcp::acceptor>(
             io_context,
             tcp::endpoint(boost::asio::ip::make_address_v4(this->address), this->fileport));
 
-        // Start accepting first connection
-        AcceptTextConnection(acceptor);
-        AcceptFileConnection(fileacceptor);
+        AcceptTextConnection(acceptor_);
+        AcceptFileConnection(file_acceptor_);
 
-        // Make a threadpool to run io_context tasks with (remember about locks)
         const unsigned int thread_count = std::max(4u, std::thread::hardware_concurrency());
-        std::vector<std::thread> threads;
+        std::vector<std::thread> threads; // Keep local per your structure
         threads.reserve(thread_count);
 
         for (unsigned int i = 0; i < thread_count; ++i)
-        {
-            threads.emplace_back([this]()
-            {
-                io_context.run();
-            });
-        }
+            threads.emplace_back([this]() { io_context.run(); });
 
+        // This loop now correctly blocks until StopServer() is called
         for (auto& t : threads)
             t.join();
+
+        threads.clear();
     }
     catch (std::exception& e)
     {
@@ -73,157 +81,278 @@ void ServerManager::StartServer()
     }
 }
 
-void ServerManager::AcceptTextConnection(const std::shared_ptr<tcp::acceptor>& acceptor)
+void ServerManager::AcceptConnection(
+    const std::shared_ptr<tcp::acceptor>& acceptor,
+    std::vector<std::shared_ptr<tcp::socket>>& client_list,
+    std::mutex& client_list_mutex,
+    MessageReciever& receiver,
+    bool sendGreeting,
+    const TextTypes& clientType)
 {
     auto socket = std::make_shared<tcp::socket>(io_context);
 
-    acceptor->async_accept(*socket, [this, acceptor, socket](const boost::system::error_code& error)
+   acceptor->async_accept(*socket,
+    [this, acceptor, socket, &client_list, &client_list_mutex, &receiver, sendGreeting, clientType]
+    (const boost::system::error_code& error)
     {
-        if (error) std::cerr << "Accept failed: " << error.message() << "\n";
-
+        if (!acceptor || !acceptor->is_open())
         {
-            std::scoped_lock lock(text_port_clients_mutex_);
-            bool exists = false;
-            for (auto& s : text_port_clients_)
-            {
-                if (s && s->native_handle() == socket->native_handle())
-                {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) text_port_clients_.push_back(socket);
+            return;
+        }
+        if (error == boost::asio::error::operation_aborted) {
+            // Expected during shutdown
+            std::cout << "Acceptor shutting down." << std::endl;
+            return;
         }
 
-        // start async read on the new connection (do not rely on recvStr from accept)
-        messageReciever_.start_read_header(socket, nullptr);
-
-        // greet the new client
-        auto helloMessage = std::make_shared<TextMessage>("Hello client");
-        boost::system::error_code sendErr;
-        Utils::SendMessage(socket, helloMessage, sendErr);
-        if (sendErr) std::cerr << "ERROR sending hello: " << sendErr.message() << std::endl;
-
-        // debug dump of clients
-        {
-            std::scoped_lock lock(text_port_clients_mutex_);
-            for (const auto& s : text_port_clients_)
-            {
-                boost::system::error_code ec1, ec2;
-                auto remote = s->remote_endpoint(ec1);
-                auto local = s->local_endpoint(ec2);
-                std::cout << " clientsock: "
-                    << (ec1 ? std::string("<err>") : remote.address().to_string())
-                    << " " << (ec1 ? 0 : remote.port())
-                    << " (local " << (ec2 ? std::string("<err>") : local.address().to_string())
-                    << ":" << (ec2 ? 0 : local.port()) << ")" << std::endl;
+        if (error) {
+            // Log unexpected errors; retry accepting only if io_context still running
+            std::cerr << "Accept failed (" << static_cast<int>(clientType)
+                      << "): " << error.message() << "\n";
+            if (!io_context.stopped() && acceptor && acceptor->is_open()) {
+                AcceptConnection(acceptor, client_list, client_list_mutex, receiver, sendGreeting, clientType);
             }
+            return;
         }
 
-        AcceptTextConnection(acceptor);
+        // Make sure socket is open before storing/starting
+        if (socket && socket->is_open()) {
+            {
+                std::scoped_lock lock(client_list_mutex);
+                bool exists = std::any_of(client_list.begin(), client_list.end(),
+                                          [&](const auto& s){ return s && s->native_handle() == socket->native_handle(); });
+                if (!exists) client_list.push_back(socket);
+            }
+
+            if (&client_list == &file_port_clients_) GetOrCreateFileQueueForSocket(socket);
+
+            // Start receiving from this socket
+            receiver.start_read_header(socket, nullptr);
+
+            if (sendGreeting) {
+                auto helloMessage = std::make_shared<TextMessage>("Hello client");
+                boost::system::error_code sendErr;
+                Utils::SendMessage(socket, helloMessage, sendErr);
+                if (sendErr && sendErr != boost::asio::error::operation_aborted)
+                    std::cerr << "ERROR sending hello: " << sendErr.message() << std::endl;
+            }
+        } else {
+            // socket closed immediately — ignore
+        }
+
+        // Re-arm accept if still running
+        if (!io_context.stopped()) {
+            AcceptConnection(acceptor, client_list, client_list_mutex, receiver, sendGreeting, clientType);
+        }
     });
+
+}
+
+void ServerManager::AcceptTextConnection(const std::shared_ptr<tcp::acceptor>& acceptor)
+{
+    AcceptConnection(acceptor, text_port_clients_, text_port_clients_mutex_, messageReciever_, true, TextTypes::Text);
 }
 
 void ServerManager::AcceptFileConnection(const std::shared_ptr<tcp::acceptor>& acceptor)
 {
-    auto socket = std::make_shared<tcp::socket>(io_context);
-
-    //listen for clients connecting and accept as soon as they try to establish a handshake
-    acceptor->async_accept(*socket, [this, acceptor, socket](const boost::system::error_code& error)
-    {
-        if (error) std::cerr << "Accept failed: " << error.message() << "\n";
-
-        //lock so the thread doesnt go boom, check if client isn't already connected
-        {
-            std::scoped_lock lock(file_port_clients_mutex_);
-            bool exists = false;
-            for (auto& s : file_port_clients_)
-            {
-                if (s && s->native_handle() == socket->native_handle())
-                {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) file_port_clients_.push_back(socket);
-        }
-
-        // start async read on the new connection
-        fileReciever.start_read_header(socket, nullptr);
-
-#ifdef _DEBUG
-        // debug dump of file port clients
-        {
-            std::scoped_lock lock(file_port_clients_mutex_);
-            for (const auto& s : file_port_clients_)
-            {
-                boost::system::error_code ec1, ec2;
-                auto remote = s->remote_endpoint(ec1);
-                auto local = s->local_endpoint(ec2);
-                std::cout << " fileport clientsock: "
-                    << (ec1 ? std::string("<err>") : remote.address().to_string())
-                    << " " << (ec1 ? 0 : remote.port())
-                    << " (local " << (ec2 ? std::string("<err>") : local.address().to_string())
-                    << ":" << (ec2 ? 0 : local.port()) << ")" << std::endl;
-            }
-        }
-#endif
-
-        AcceptFileConnection(acceptor);
-    });
+    AcceptConnection(acceptor, file_port_clients_, file_port_clients_mutex_, fileReciever, false, TextTypes::Text);
 }
 
+std::shared_ptr<FileTransferQueue> ServerManager::GetOrCreateFileQueueForSocket(
+    const std::shared_ptr<tcp::socket>& sock)
+{
+    if (!sock) return nullptr;
+    auto key = reinterpret_cast<std::uintptr_t>(sock.get());
+
+    {
+        std::scoped_lock lk(file_queues_mutex_);
+        auto it = file_queues_.find(key);
+        if (it != file_queues_.end()) return it->second;
+    }
+
+    std::weak_ptr<tcp::socket> weak_sock = sock;
+    auto getter = [weak_sock]() -> std::shared_ptr<tcp::socket> { return weak_sock.lock(); };
+
+    auto q = std::make_shared<FileTransferQueue>(std::move(getter));
+    {
+        std::scoped_lock lk(file_queues_mutex_);
+        file_queues_.emplace(key, q);
+    }
+    return q;
+}
+
+void ServerManager::RemoveFileQueueForSocket(const std::shared_ptr<tcp::socket>& sock)
+{
+    if (!sock) return;
+    auto key = reinterpret_cast<std::uintptr_t>(sock.get());
+    std::shared_ptr<FileTransferQueue> q;
+    {
+        std::scoped_lock lk(file_queues_mutex_);
+        auto it = file_queues_.find(key);
+        if (it != file_queues_.end())
+        {
+            q = it->second;
+            file_queues_.erase(it);
+        }
+    }
+    if (q) q->stop();
+}
+
+// --- Broadcast overload for binary files ---
+void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender,
+                              const std::shared_ptr<std::vector<char>>& rawData)
+{
+    if (!rawData) return;
+
+    auto fm = std::make_shared<FileMessage>();
+    try { fm->deserialize(*rawData); }
+    catch (const std::exception& ex)
+    {
+        std::cerr << "Broadcast: failed to deserialize FileMessage: " << ex.what() << "\n";
+        return;
+    }
+
+    std::vector<std::shared_ptr<tcp::socket>> clientsCopy;
+    {
+        std::scoped_lock lk(file_port_clients_mutex_);
+        file_port_clients_.erase(
+            std::remove_if(file_port_clients_.begin(), file_port_clients_.end(),
+                           [this](const auto& s){
+                               bool dead = (!s || !s->is_open());
+                               if(dead && s) RemoveFileQueueForSocket(s);
+                               return dead;
+                           }),
+            file_port_clients_.end()
+        );
+        clientsCopy = file_port_clients_;
+    }
+
+    std::string sender_info = "<Server>";
+    if (sender) {
+        boost::system::error_code ec;
+        auto ep = sender->remote_endpoint(ec);
+        if (!ec) sender_info = ep.address().to_string() + ":" + std::to_string(ep.port());
+    }
+
+    for (const auto& clientSock : clientsCopy)
+    {
+        if (!clientSock || !clientSock->is_open()) continue;
+        if (sender && clientSock->native_handle() == sender->native_handle()) continue;
+
+        // Enqueue actual file for sending
+        auto q = GetOrCreateFileQueueForSocket(clientSock);
+        if (q) q->enqueue(fm);
+
+        // Optional: send a text log to clients for display
+        auto text_log = std::make_shared<TextMessage>("[FILE] From " + sender_info + ": " + fm->to_string());
+        boost::system::error_code sendErr;
+        Utils::SendMessage(clientSock, text_log, sendErr);
+    }
+}
+
+// --- Broadcast overload for text messages ---
 void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender, const std::string& text)
 {
     std::vector<std::shared_ptr<tcp::socket>> clientsCopy;
     {
         std::scoped_lock lock(text_port_clients_mutex_);
-        // remove closed sockets
-        text_port_clients_.erase(std::remove_if(text_port_clients_.begin(), text_port_clients_.end(),
-                                                [](const auto& s) { return !s || !s->is_open(); }),
-                                 text_port_clients_.end());
+        // Clean up disconnected clients
+        text_port_clients_.erase(
+            std::remove_if(text_port_clients_.begin(), text_port_clients_.end(),
+                           [](const auto& s){ return !s || !s->is_open(); }),
+            text_port_clients_.end()
+        );
         clientsCopy = text_port_clients_;
     }
 
-    boost::system::error_code ec;
-    auto sender_ep = sender->remote_endpoint(ec);
+    std::string sender_info = "<Server>";
+    if (sender) {
+        boost::system::error_code ec;
+        auto ep = sender->remote_endpoint(ec);
+        if (!ec) sender_info = ep.address().to_string() + ":" + std::to_string(ep.port());
+    }
 
     for (const auto& clientSock : clientsCopy)
     {
-        try
-        {
-            if (!clientSock || !clientSock->is_open()) continue;
-            if (clientSock->native_handle() == sender->native_handle()) continue;
+        if (!clientSock || !clientSock->is_open()) continue;
+        if (sender && clientSock->native_handle() == sender->native_handle()) continue;
 
-            std::string prefix = ec
-                                     ? "<unknown>"
-                                     : sender_ep.address().to_string() + ":" + std::to_string(sender_ep.port());
-            auto msg = std::make_shared<TextMessage>(prefix + ": " + text);
+        // Send text message with proper [TEXT] prefix
+        auto msg = std::make_shared<TextMessage>("[TEXT] From " + sender_info + ": " + text);
 
-            boost::system::error_code sendErr;
-            Utils::SendMessage(clientSock, msg, sendErr);
-            if (sendErr)
-            {
-                std::cerr << "ERROR sending to client: " << sendErr.message() << std::endl;
-            }
-            else
-            {
-                LOG("Sent message to client.");
-            }
-        }
-        catch (const std::exception& ex)
-        {
-            std::cerr << "Exception while notifying clients: " << ex.what() << std::endl;
-        }
+        boost::system::error_code sendErr;
+        Utils::SendMessage(clientSock, msg, sendErr);
+        if (sendErr) std::cerr << "ERROR sending to client: " << sendErr.message() << std::endl;
     }
 }
 
-int ServerManager::GetPort() const
-{
-    return this->port;
-}
 
-std::string ServerManager::GetIpAddress()
+int ServerManager::GetFilePort() const
 {
-    return this->address;
+    return fileport;
+}
+void ServerManager::StopServer()
+{
+    std::cout << "Server stopping signal sent...\n";
+    boost::system::error_code ec;
+
+    // Cancel & close acceptors first
+    if (acceptor_) {
+        acceptor_->cancel(ec);
+        if (ec && ec != boost::asio::error::operation_aborted)
+            std::cerr << "acceptor cancel error: " << ec.message() << "\n";
+        acceptor_->close(ec);
+        if (ec && ec != boost::asio::error::operation_aborted)
+            std::cerr << "acceptor close error: " << ec.message() << "\n";
+    }
+
+    if (file_acceptor_) {
+        file_acceptor_->cancel(ec);
+        if (ec && ec != boost::asio::error::operation_aborted)
+            std::cerr << "file_acceptor cancel error: " << ec.message() << "\n";
+        file_acceptor_->close(ec);
+        if (ec && ec != boost::asio::error::operation_aborted)
+            std::cerr << "file_acceptor close error: " << ec.message() << "\n";
+    }
+
+    // Close text clients
+    {
+        std::scoped_lock lk(text_port_clients_mutex_);
+        for (auto& s : text_port_clients_) {
+            if (!s) continue;
+            boost::system::error_code ec2;
+            s->cancel(ec2);
+            s->shutdown(tcp::socket::shutdown_both, ec2);
+            s->close(ec2);
+            // ignore expected errors like operation_aborted / not_connected
+        }
+        text_port_clients_.clear();
+    }
+
+    // Close file clients
+    {
+        std::scoped_lock lk(file_port_clients_mutex_);
+        for (auto& s : file_port_clients_) {
+            if (!s) continue;
+            boost::system::error_code ec2;
+            s->cancel(ec2);
+            s->shutdown(tcp::socket::shutdown_both, ec2);
+            s->close(ec2);
+        }
+        file_port_clients_.clear();
+    }
+
+    // Stop any per-socket file queues
+    {
+        std::scoped_lock lk(file_queues_mutex_);
+        for (auto &kv : file_queues_) {
+            if (kv.second) kv.second->stop();
+        }
+        file_queues_.clear();
+    }
+
+    // Finally stop io_context to unblock worker threads
+    if (!io_context.stopped()) {
+        io_context.stop();
+    }
 }

@@ -21,6 +21,7 @@ public:
     // Optional: get a human-readable representation
     virtual std::string to_string() const = 0;
 
+    virtual std::vector<char> to_data_send() const = 0;
     virtual void save_file() const
     {
 

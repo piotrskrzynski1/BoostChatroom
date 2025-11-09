@@ -23,7 +23,7 @@ protected:
     std::shared_ptr<boost::asio::ip::tcp::socket> client_file_socket;
 
 public:
-    explicit ClientServerManager(boost::asio::io_context& io);
+    explicit ClientServerManager(boost::asio::io_context& io,std::string ip,unsigned short int textport,unsigned short int fileport);
 
     void Disconnect() const;
     void Message(TextTypes type, const std::shared_ptr<IMessage>& message) const;

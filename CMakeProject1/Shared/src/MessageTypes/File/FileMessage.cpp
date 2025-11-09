@@ -2,6 +2,25 @@
 #include <iostream>
 #include <MessageTypes/File/FileMessage.h>
 #include <MessageTypes/Utilities/HeaderHelper.hpp>
+// from uint8_t bytes
+FileMessage::FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes)
+{
+    if (bytes.empty()) {
+        throw std::runtime_error("Empty byte data for FileMessage: " + filename);
+    }
+    filename_ = filename;
+    bytes_.assign(bytes.begin(), bytes.end());
+}
+
+// from char bytes
+FileMessage::FileMessage(const std::string& filename, const std::vector<char>& bytes)
+{
+    if (bytes.empty()) {
+        throw std::runtime_error("Empty byte data for FileMessage: " + filename);
+    }
+    filename_ = filename;
+    bytes_ = bytes;
+}
 
 FileMessage::FileMessage(const std::filesystem::path& path)
 {
@@ -26,7 +45,7 @@ FileMessage::FileMessage(const std::filesystem::path& path)
 
 std::vector<char> FileMessage::serialize() const
 {
-    const uint32_t id = static_cast<uint32_t>(TextTypes::File); // host order
+    constexpr uint32_t id = static_cast<uint32_t>(TextTypes::File); // host order
     const uint64_t name_length = filename_.size();
     const uint64_t file_length = bytes_.size();
 
@@ -91,6 +110,10 @@ std::string FileMessage::to_string() const
     return "FileMessage: " + filename_ + " (" + std::to_string(bytes_.size()) + " bytes)";
 }
 
+std::vector<char> FileMessage::to_data_send() const
+{
+    return bytes_;
+}
 void FileMessage::save_file() const
 {
     std::cout << "[DEBUG] bytes_ size = " << bytes_.size() << "\n";

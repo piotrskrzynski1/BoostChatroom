@@ -23,11 +23,11 @@ void ClientServerManager::handle_connect(const boost::system::error_code& error,
     messageReceiver_.start_read_header(socket);
 }
 
-ClientServerManager::ClientServerManager(boost::asio::io_context& io) : io_context_(io)
+ClientServerManager::ClientServerManager(boost::asio::io_context& io,std::string ip,unsigned short int textport,unsigned short int fileport) : io_context_(io)
 {
         try {
-            endpoint = tcp::endpoint(boost::asio::ip::make_address("127.0.0.1"), 5555);
-            endpoint_file = tcp::endpoint(boost::asio::ip::make_address("127.0.0.1"), 5556);
+            endpoint = tcp::endpoint(boost::asio::ip::make_address(ip), textport);
+            endpoint_file = tcp::endpoint(boost::asio::ip::make_address(ip), fileport);
 
             client_socket = std::make_shared<tcp::socket>(io_context_);
             client_file_socket = std::make_shared<tcp::socket>(io_context_);
@@ -80,7 +80,7 @@ void ClientServerManager::Disconnect() const
     disconnect_socket(client_file_socket, "FileSocket");
 }
 
-void ClientServerManager::Message(TextTypes type, const std::shared_ptr<IMessage>& message) const
+void ClientServerManager::Message(const TextTypes type, const std::shared_ptr<IMessage>& message) const
 {
     boost::system::error_code err;
 
@@ -128,7 +128,7 @@ void ClientServerManager::CancelAndReconnectFileSocket()
     if (file_queue_) file_queue_->cancel_all();
 
     // 3) attempt to cancel/close existing socket so in-flight send is interrupted
-    if (client_file_socket) {
+    if (client_file_socket && client_file_socket->is_open()) {
         boost::system::error_code ec;
         // cancel pending async ops
         client_file_socket->cancel(ec);
@@ -149,7 +149,7 @@ void ClientServerManager::CancelAndReconnectFileSocket()
     // 4) create new socket and async_connect it. When it connects messageReceiver_.start_read_header
     // will be started in handle_connect (same as initial connect)
     client_file_socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context_);
-    //DONT CALL ANYWHERE ELSE WHEN ITS RECONNECTING OK
+    //DON'T CALL ANYWHERE ELSE WHEN ITS RECONNECTING OK
     client_file_socket->async_connect(endpoint_file,
     [this](const boost::system::error_code& ec)
     {

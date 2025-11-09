@@ -13,6 +13,7 @@ public:
     void deserialize(const std::vector<char>& data) override;
     [[nodiscard]] std::string to_string() const override;
 
+    [[nodiscard]] std::vector<char> to_data_send() const override;
 private:
-    std::string text_;
+    std::vector<char> text_;
 };

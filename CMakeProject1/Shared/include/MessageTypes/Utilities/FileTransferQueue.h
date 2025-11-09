@@ -1,132 +1,85 @@
 #pragma once
 
-#include <boost/asio/ip/tcp.hpp>
-#include <filesystem>
 #include <functional>
-#include <string>
+#include <memory>
 #include <vector>
-#include <thread>
+#include <deque>
 #include <mutex>
 #include <condition_variable>
+#include <thread>
 #include <atomic>
-#include <memory>
+#include <filesystem>
+#include <cstdint>
 
-// Forward declare FileMessage
-class FileMessage;
+#include <boost/asio.hpp>
+#include "MessageTypes/File/FileMessage.h" // your FileMessage
+
+// Returns the socket currently associated with this queue
+using SocketGetter = std::function<std::shared_ptr<boost::asio::ip::tcp::socket>()>;
 
 class FileTransferQueue
 {
 public:
-    /**
-     * @brief Defines the state of a transfer item in the queue.
-     */
-    enum class State {
-        Queued,     // Waiting to be sent
-        Sending,    // In-flight
-        Done,       // Sent successfully
-        Failed,     // Failed to send, can be retried
-        Canceled    // Canceled by user, will not be retried
-    };
+    enum class State { Queued, Sending, Failed, Done, Canceled };
 
-    /**
-     * @brief Represents a single file transfer item in the queue.
-     */
     struct Item {
-        uint64_t id;
-        std::filesystem::path path;
-        State state;
-        uint32_t retries;
+        uint64_t id = 0;
+        std::filesystem::path path;                // Used if built from a local file
+        std::shared_ptr<FileMessage> message;      // Used when already built (forwarded or constructed)
+        State state = State::Queued;
+        int retries = 0;
         std::string last_error;
-        std::shared_ptr<FileMessage> message; // Pre-built message
     };
 
-    /**
-     * @brief Type alias for the socket getter function.
-     * The queue calls this when it needs the socket to send a file.
-     */
-    using SocketGetter = std::function<std::shared_ptr<boost::asio::ip::tcp::socket>()>;
-
-    /**
-     * @brief Constructs the queue and starts its worker thread.
-     * @param socket_getter A function that returns the socket to use for sending.
-     */
-    FileTransferQueue(SocketGetter socket_getter);
-
-    /**
-     * @brief Stops the worker thread and destroys the queue.
-     */
+    explicit FileTransferQueue(SocketGetter socket_getter);
     ~FileTransferQueue();
 
-    // --- Public API ---
+    // === Enqueue Methods ===
 
-    /**
-     * @brief Adds a file path to the queue for sending.
-     * @param path The full path to the file.
-     * @return A unique ID for this transfer item.
-     */
+    // From a filesystem path (loads file from disk)
     uint64_t enqueue(const std::filesystem::path& path);
 
-    /**
-     * @brief Removes an item from the queue entirely.
-     * @param id The ID returned by enqueue().
-     * @return true if the item was found and removed, false otherwise.
-     */
+    // From an already-built FileMessage (useful when forwarding)
+    uint64_t enqueue(const std::shared_ptr<FileMessage>& message);
+
+    // From filename + in-memory bytes (builds FileMessage internally)
+    uint64_t enqueue(const std::string& filename, const std::vector<uint8_t>& bytes);
+
+    // === Control and Management ===
+
     bool remove(uint64_t id);
-
-    /**
-     * @brief Marks a 'Failed' item to be retried.
-     * @param id The ID of the item to retry.
-     * @return true if the item was found and marked for retry, false otherwise.
-     */
     bool retry(uint64_t id);
-
-    /**
-     * @brief Pauses the worker thread. No new files will be sent.
-     */
     void pause();
-
-    /**
-     * @brief Resumes the worker thread.
-     */
     void resume();
-
-    /**
-     * @brief Cancels a specific item. If it's sending, attempts to close the socket.
-     * @param id The ID of the item to cancel.
-     * @return true if the item was found, false otherwise.
-     */
     bool cancel(uint64_t id);
-
-    /**
-     * @brief Marks all Queued, Failed, or Sending items as Canceled.
-     * Attempts to close the socket to interrupt any in-flight transfer.
-     */
     void cancel_all();
-
-    /**
-     * @brief Gets a thread-safe copy of the current queue state.
-     * @return A vector containing all current items.
-     */
     std::vector<Item> list_snapshot();
-
-    /**
-     * @brief Stops the worker thread.
-     */
     void stop();
 
-
 private:
-    void worker_loop();
+    // === Helpers ===
+
+    // Build a FileMessage from a file path (disk)
     std::shared_ptr<FileMessage> make_file_message(const std::filesystem::path& p);
 
-    std::vector<Item> queue_;
+    // Build a FileMessage directly from raw bytes (for forwarding)
+    std::shared_ptr<FileMessage> make_file_message_from_bytes(
+        const std::string& filename,
+        const std::vector<uint8_t>& bytes);
+
+    // Background worker
+    void worker_loop();
+
+private:
+    SocketGetter socket_getter_;
+
+    std::deque<Item> queue_;
     std::mutex mutex_;
     std::condition_variable cv_;
     std::thread worker_;
 
     std::atomic<bool> running_{true};
     std::atomic<bool> paused_{false};
-    std::atomic<uint64_t> next_id_{1};
 
-    SocketGetter socket_getter_;
+    uint64_t next_id_ = 1;
 };

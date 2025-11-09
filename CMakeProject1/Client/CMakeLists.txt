@@ -16,7 +16,8 @@ file(GLOB_RECURSE HEADERS
 	${HEADER_DIR}/*.hpp
 )
 
-add_executable (client ${SOURCES})
+add_executable (client ${SOURCES}
+)
 
 target_include_directories(client PRIVATE ${HEADER_DIR})
 target_include_directories(client PRIVATE ${Boost_INCLUDE_DIRS})
