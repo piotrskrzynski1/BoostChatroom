@@ -17,6 +17,9 @@ file(GLOB_RECURSE HEADERS
 )
 
 add_executable (client ${SOURCES}
+		include/Interface/ICommand.h
+		src/Server/CommandProcessor.cpp
+		include/Server/CommandProcessor.h
 )
 
 target_include_directories(client PRIVATE ${HEADER_DIR})

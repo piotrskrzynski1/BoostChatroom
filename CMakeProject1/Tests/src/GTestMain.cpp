@@ -21,7 +21,6 @@ public:
     ~MockMessage() override = default;
 };
 
-// ---------- RAII Temporary File Helper ----------
 // Creates a dummy file for tests and guarantees cleanup
 struct ScopedTempFile {
     std::filesystem::path path;
@@ -120,8 +119,8 @@ protected:
             }
         });
 
-        // ⚠️ NOTE: This sleep is fragile and can cause flaky tests.
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        // This sleep is fragile and can cause flaky tests.
+        //std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
         // 2. Create the Client
         manager = std::make_unique<ClientServerManager>(io, "127.0.0.1", 5555, 5556);
@@ -135,7 +134,6 @@ protected:
             }
         });
 
-        // ⚠️ NOTE: This sleep is also fragile.
         // The test should ideally wait for the client's handle_connect
         // to set a promise/future to confirm connection.
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -183,7 +181,7 @@ TEST_F(TestableServerManagerTest, BroadcastTextDoesNotCrash) {
 }
 
 TEST_F(TestableServerManagerTest, BroadcastFileDoesNotCrash) {
-    // ✅ **FIX 2: Use a portable temporary file, not a hardcoded path**
+    // Use a portable temporary file, not a hardcoded path**
     ScopedTempFile temp_file("temp_broadcast_file.txt");
 
     // We assume FileMessage can be constructed from a path
@@ -200,7 +198,7 @@ TEST_F(TestableServerManagerTest, GetIpAddressReturnsCorrectValue) {
 // --- Client/Integration Tests ---
 
 TEST_F(ClientServerManagerTest, EnqueueFileAddsItem) {
-    // ✅ **FIX 2: Use a portable temporary file**
+    // Use a portable temporary file**
     ScopedTempFile temp_file("temp_enqueue_file.txt");
 
     // 1. Pause the queue so the worker thread doesn't grab the file
