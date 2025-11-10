@@ -11,7 +11,7 @@ A C++ console chatroom using Boost.Asio, built for Windows/Linux.
 - Send/Retry/Pause/Cancel... commands for Files
 - Chat History up to 100 messages upon joining
 
-## Screenshot
+## Screenshots
 
 <img width="2091" height="1273" alt="background" src="https://github.com/user-attachments/assets/cfdbbf94-85dd-41ba-81db-70733cba069b" />
 
@@ -44,6 +44,8 @@ cd build
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ ..
 ninja
 ```
+
+You can also try using the build.sh bash script, it executes these commands one by one.
 
 ## Use Example
 1. Run the server application, type your ip (for example 127.0.0.1 loopback or 0.0.0.0 to enable listening on all network interfaces), and ports (by default text port: 5555, file port: 5556)
@@ -95,3 +97,4 @@ sudo ufw allow [textport]/tcp
 sudo ufw allow [fileport]/tcp
 ```
 other operating systems may need a different command to allow unfiltered traffic on these ports.
+You can also use the ready .sh script for that in the project folder.
