@@ -1,8 +1,7 @@
-// CommandProcessor.cpp
 #include "Server/CommandProcessor.h"
 #include <iostream>
-#include <functional> // For std::function
-#include <Server/ClientServerConnectionManager.h> // Need full def for methods
+#include <functional>
+#include <Server/ClientServerConnectionManager.h>
 
 #include "Interface/ICommand.h"
 
@@ -165,7 +164,6 @@ namespace
 
 
 // --- CommandProcessor Implementation ---
-
 CommandProcessor::CommandProcessor()
 {
     // Register all commands

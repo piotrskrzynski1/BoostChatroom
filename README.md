@@ -41,3 +41,12 @@ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ ..
 ninja
 ```
 
+
+## When running server
+
+When you run server and want incoming traffic to not get filtered run these commands if have an active firewall on Ubuntu.
+```
+sudo ufw allow [textport]/tcp
+sudo ufw allow [fileport]/tcp
+```
+other operating systems may need a different command to allow unfiltered traffic on these ports.

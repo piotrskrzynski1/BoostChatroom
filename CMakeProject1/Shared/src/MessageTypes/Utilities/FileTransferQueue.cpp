@@ -122,8 +122,7 @@ bool FileTransferQueue::cancel(uint64_t id)
 
     if (was_sending) {
         try {
-            auto sock = socket_getter_();
-            if (sock && sock->is_open()) {
+            if (auto sock = socket_getter_(); sock && sock->is_open()) {
                 boost::system::error_code ec;
                 sock->cancel(ec);
                 sock->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);

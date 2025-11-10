@@ -28,10 +28,10 @@ static uint64_t ntohll(const uint64_t value)
 
 // ------------------------------------------------------------------
 
-void MessageReciever::start_read_body(std::shared_ptr<std::vector<char>> header_buffer,
+void MessageReciever::start_read_body(const std::shared_ptr<std::vector<char>>& header_buffer,
                                       uint64_t body_length,
-                                      std::shared_ptr<boost::asio::ip::tcp::socket> socket,
-                                      std::shared_ptr<std::string> napis)
+                                      const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
+                                      const std::shared_ptr<std::string>& napis)
 {
     auto body_buffer = std::make_shared<std::vector<char>>(static_cast<size_t>(body_length));
 
@@ -123,7 +123,7 @@ void MessageReciever::handle_read_message(
 
 
 void MessageReciever::start_read_header(std::shared_ptr<boost::asio::ip::tcp::socket> socket,
-                                        std::shared_ptr<std::string> napis)
+                                        const std::shared_ptr<std::string>& napis)
 {
     constexpr size_t header_size = sizeof(uint32_t) + sizeof(uint64_t);
     auto header_buffer = std::make_shared<std::vector<char>>(header_size);

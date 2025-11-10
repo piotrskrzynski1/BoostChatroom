@@ -9,10 +9,8 @@
 #include <thread>
 #include <atomic>
 #include <filesystem>
-#include <cstdint>
-
 #include <boost/asio.hpp>
-#include "MessageTypes/File/FileMessage.h" // your FileMessage
+#include "MessageTypes/File/FileMessage.h"
 
 // Returns the socket currently associated with this queue
 using SocketGetter = std::function<std::shared_ptr<boost::asio::ip::tcp::socket>()>;

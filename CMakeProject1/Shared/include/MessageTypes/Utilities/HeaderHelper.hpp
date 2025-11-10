@@ -1,5 +1,4 @@
 #pragma once
-#include <cstdint>
 #include <vector>
 #include <cstring>
 #include <arpa/inet.h>
@@ -8,10 +7,10 @@
 
 namespace Utils
 {
-    inline uint64_t htonll(uint64_t val)
+    inline uint64_t htonll(const uint64_t val)
     {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-        return (((uint64_t)htonl(val & 0xFFFFFFFFULL)) << 32) | htonl(val >> 32);
+        return (static_cast<uint64_t>(htonl(val & 0xFFFFFFFFULL)) << 32) | htonl(val >> 32);
 #else
         return val;
 #endif
@@ -20,7 +19,7 @@ namespace Utils
     inline uint64_t ntohll(uint64_t val)
     {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-        return (((uint64_t)ntohl(val & 0xFFFFFFFFULL)) << 32) | ntohl(val >> 32);
+        return (static_cast<uint64_t>(ntohl(val & 0xFFFFFFFFULL)) << 32) | ntohl(val >> 32);
 #else
         return val;
 #endif

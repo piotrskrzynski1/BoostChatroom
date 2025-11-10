@@ -63,7 +63,6 @@ void ServerManager::StartServer()
         AcceptFileConnection(file_acceptor_);
 
         const unsigned int thread_count = std::max(4u, std::thread::hardware_concurrency());
-        std::vector<std::thread> threads; // Keep local per your structure
         threads.reserve(thread_count);
 
         for (unsigned int i = 0; i < thread_count; ++i)
@@ -308,7 +307,6 @@ void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender,
     }
 
     // --- 2. Send text log to ALL TEXT clients (including sender) ---
-    // ✅ SIMPLE FIX: Just send to everyone, don't try to filter
     std::vector<std::shared_ptr<tcp::socket>> textClientsCopy;
     {
         std::scoped_lock lock(text_port_clients_mutex_);
@@ -324,7 +322,7 @@ void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender,
     {
         if (!clientSock || !clientSock->is_open()) continue;
 
-        // ✅ NO FILTERING - Send to everyone
+        // Send to everyone
         boost::system::error_code sendErr;
         Utils::SendMessage(clientSock, text_log, sendErr);
         if (sendErr) {
@@ -356,7 +354,7 @@ void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender, const 
         if (!ec) sender_info = ep.address().to_string() + ":" + std::to_string(ep.port());
     }
 
-    // ✅ FIX: Create message and add to history ONCE
+    // Create message and add to history ONCE
     auto msg = std::make_shared<TextMessage>("[TEXT] From " + sender_info + ": " + text);
     {
         std::scoped_lock lock(history_mutex_);
@@ -428,7 +426,7 @@ void ServerManager::StopServer()
     // Close text clients
     {
         std::scoped_lock lk(text_port_clients_mutex_);
-        for (auto& s : text_port_clients_) {
+        for (const auto& s : text_port_clients_) {
             if (s && s->is_open()) {
                 boost::system::error_code ec2;
                 s->cancel(ec2); // Optional, but good practice
@@ -445,8 +443,8 @@ void ServerManager::StopServer()
     // Stop any per-socket file queues (their threads must be joined here)
     {
         std::scoped_lock lk(file_queues_mutex_);
-        for (auto &kv : file_queues_) {
-            if (kv.second) kv.second->stop(); // FileTransferQueue::stop() must join its worker_ thread.
+        for (auto & [fst, snd] : file_queues_) {
+            if (snd) snd->stop(); // FileTransferQueue::stop() must join its worker_ thread.
         }
         file_queues_.clear();
     }
