@@ -66,3 +66,7 @@ std::vector<char> TextMessage::to_data_send() const
     return {text_.data(),text_.data()+text_.size()};
 
 }
+
+void TextMessage::save_file() const
+{
+}

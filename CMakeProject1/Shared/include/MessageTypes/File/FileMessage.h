@@ -16,8 +16,8 @@ public:
     explicit FileMessage(const std::filesystem::path& path);
 
     // construct directly from file data in memory
-    FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes);
-    FileMessage(const std::string& filename, const std::vector<char>& bytes);
+    explicit FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes);
+    explicit FileMessage(const std::string& filename, const std::vector<char>& bytes);
 
     // Convert message to bytes to send over socket
     std::vector<char> serialize() const override;

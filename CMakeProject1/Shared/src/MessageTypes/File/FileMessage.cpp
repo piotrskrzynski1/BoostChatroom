@@ -116,22 +116,20 @@ std::vector<char> FileMessage::to_data_send() const
 }
 void FileMessage::save_file() const
 {
-    std::cout << "[DEBUG] bytes_ size = " << bytes_.size() << "\n";
+    // std::cout << "[DEBUG] bytes_ size = " << bytes_.size() << "\n";  // REMOVED
 
-    std::cout << std::endl;
     namespace fs = std::filesystem;
-
     try {
         if (bytes_.empty()) {
             std::cerr << "No data to write!\n";
             return;
         }
-        fs::path output_dir = "/home/pioskr3459/Desktop"; // folder where you want files
+        fs::path output_dir = "/home/pioskr3459/Desktop";
         if (!fs::exists(output_dir))
             fs::create_directories(output_dir);
 
         std::string filename = filename_.empty() ? "received_file.bin" : filename_;
-        fs::path output_path = output_dir / filename; // append filename to folder
+        fs::path output_path = output_dir / filename;
 
         std::ofstream out_file(output_path, std::ios::binary);
         if (!out_file)
@@ -140,7 +138,8 @@ void FileMessage::save_file() const
         out_file.write(reinterpret_cast<const char*>(bytes_.data()), bytes_.size());
         out_file.close();
 
-        std::cout << "File saved: " << output_path << " (" << bytes_.size() << " bytes)\n";
+        // Optional: Keep this for actual errors/important info
+        // std::cout << "File saved: " << output_path << " (" << bytes_.size() << " bytes)\n";
     }
     catch (const std::exception& e) {
         std::cerr << "FileMessage::save_file error: " << e.what() << std::endl;

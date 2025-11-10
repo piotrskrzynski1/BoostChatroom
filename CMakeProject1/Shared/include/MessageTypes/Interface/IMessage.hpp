@@ -1,14 +1,16 @@
 #pragma once
+#include <cstdint>
 #include <vector>
 #include <string>
-#include <cstdint>
 
-enum class TextTypes : uint32_t {
+enum class TextTypes : uint32_t
+{
     Text = 0,
     File = 1,
 };
 
-class IMessage {
+class IMessage
+{
 public:
     virtual ~IMessage() = default;
 
@@ -22,8 +24,5 @@ public:
     virtual std::string to_string() const = 0;
 
     virtual std::vector<char> to_data_send() const = 0;
-    virtual void save_file() const
-    {
-
-    };
+    virtual void save_file() const = 0;
 };

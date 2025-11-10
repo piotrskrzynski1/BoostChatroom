@@ -6,7 +6,8 @@
 #include <unordered_map>
 #include "Interface/ICommand.h"
 
-class CommandProcessor {
+class CommandProcessor
+{
 public:
     /**
      * @brief Constructor that registers all available commands.

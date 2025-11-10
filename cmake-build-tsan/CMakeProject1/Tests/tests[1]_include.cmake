@@ -1,0 +1,5 @@
+if(EXISTS "/home/pioskr3459/Desktop/chatroom/BoostChatroom/cmake-build-tsan/CMakeProject1/Tests/tests[1]_tests.cmake")
+  include("/home/pioskr3459/Desktop/chatroom/BoostChatroom/cmake-build-tsan/CMakeProject1/Tests/tests[1]_tests.cmake")
+else()
+  add_test(tests_NOT_BUILT tests_NOT_BUILT)
+endif()

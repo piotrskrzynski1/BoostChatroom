@@ -1,0 +1,2 @@
+/usr/bin/ar qc libMessages.a CMakeFiles/Messages.dir/src/MessageTypes/File/FileMessage.cpp.o CMakeFiles/Messages.dir/src/MessageTypes/Text/TextMessage.cpp.o CMakeFiles/Messages.dir/src/MessageTypes/Utilities/FileTransferQueue.cpp.o CMakeFiles/Messages.dir/src/MessageTypes/Utilities/MessageFactory.cpp.o CMakeFiles/Messages.dir/src/Server/MessageReciever.cpp.o CMakeFiles/Messages.dir/src/Server/ServerMessageSender.cpp.o
+/usr/bin/ranlib libMessages.a

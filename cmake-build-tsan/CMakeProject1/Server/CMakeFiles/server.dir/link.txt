@@ -1,0 +1,1 @@
+/usr/bin/g++ -g -fsanitize=thread CMakeFiles/server.dir/src/Server/ServerManager.cpp.o CMakeFiles/server.dir/src/ServerMain.cpp.o -o server  ../Shared/libMessages.a 

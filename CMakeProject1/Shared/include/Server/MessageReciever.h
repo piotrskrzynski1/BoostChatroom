@@ -7,18 +7,19 @@ class MessageReciever
 {
 private:
     std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::string&)> on_message_text;
-    std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::shared_ptr<std::vector<char>> &)> on_message_file;
+    std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::shared_ptr<std::vector<char>>&)>
+    on_message_file;
 
 
     void start_read_body(std::shared_ptr<std::vector<char>> header_buffer,
-                                      uint64_t body_length,
-                                      std::shared_ptr<boost::asio::ip::tcp::socket> socket,
-                                      std::shared_ptr<std::string> napis);
+                         uint64_t body_length,
+                         std::shared_ptr<boost::asio::ip::tcp::socket> socket,
+                         std::shared_ptr<std::string> napis);
     void handle_read_message(const std::shared_ptr<std::vector<char>>& buffer,
-                                              const boost::system::error_code& error,
-                                              std::size_t bytes_transferred,
-                                              const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
-                                              const std::shared_ptr<std::string>& napis);
+                             const boost::system::error_code& error,
+                             std::size_t bytes_transferred,
+                             const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
+                             const std::shared_ptr<std::string>& napis);
 
 public:
     void start_read_header(std::shared_ptr<boost::asio::ip::tcp::socket> socket,

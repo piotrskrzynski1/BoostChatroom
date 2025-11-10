@@ -1,0 +1,151 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						2,
+						3,
+						4
+					],
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10"
+					},
+					"projectIndex" : 0,
+					"source" : "."
+				},
+				{
+					"build" : "CMakeProject1/Shared",
+					"jsonFile" : "directory-CMakeProject1.Shared-Debug-8bd39585aea9db06e477.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.16"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "CMakeProject1/Shared",
+					"targetIndexes" : 
+					[
+						0
+					]
+				},
+				{
+					"build" : "CMakeProject1/Client",
+					"jsonFile" : "directory-CMakeProject1.Client-Debug-32afddbe9d1e2084763e.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "CMakeProject1/Client",
+					"targetIndexes" : 
+					[
+						1
+					]
+				},
+				{
+					"build" : "CMakeProject1/Server",
+					"jsonFile" : "directory-CMakeProject1.Server-Debug-f6547f859995dc3e7e63.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "CMakeProject1/Server",
+					"targetIndexes" : 
+					[
+						2
+					]
+				},
+				{
+					"build" : "CMakeProject1/Tests",
+					"jsonFile" : "directory-CMakeProject1.Tests-Debug-d5b4f2f4331829f92b78.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "CMakeProject1/Tests",
+					"targetIndexes" : 
+					[
+						3
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4
+					],
+					"name" : "ChatApp",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 1,
+					"id" : "Messages::@1e7c4156e0b7161db790",
+					"jsonFile" : "target-Messages-Debug-067e58937cb5efa01580.json",
+					"name" : "Messages",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "client::@987b29e6c5fc9a2d8932",
+					"jsonFile" : "target-client-Debug-af7c9325d780e89b2d12.json",
+					"name" : "client",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 3,
+					"id" : "server::@c143dba94950237d00a9",
+					"jsonFile" : "target-server-Debug-008fe0a1dc5350202c4c.json",
+					"name" : "server",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "tests::@bec77031e7bd5861a221",
+					"jsonFile" : "target-tests-Debug-64f8d0656d1e84ea99f5.json",
+					"name" : "tests",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/pioskr3459/Desktop/chatroom/BoostChatroom/cmake-build-debug-g",
+		"source" : "/home/pioskr3459/Desktop/chatroom/BoostChatroom"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 8
+	}
+}

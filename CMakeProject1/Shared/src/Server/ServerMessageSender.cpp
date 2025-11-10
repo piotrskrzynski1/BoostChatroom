@@ -17,7 +17,7 @@ void Utils::SendMessage(const std::shared_ptr<boost::asio::ip::tcp::socket>& soc
     if (error) {std::cerr << "Accept failed: " << error.message() << "\n"; return;}
     auto data = std::make_shared<std::vector<char>>(message->serialize());
     boost::asio::async_write(*socket, boost::asio::buffer(*data),
-                             [](const boost::system::error_code& ec, std::size_t /*bytes*/)
+                             [socket](const boost::system::error_code& ec, std::size_t /*bytes*/)
                              {
                                  if (ec) std::cerr << "Error sending: " << ec.message() << "\n";
                                  LOG("Sent message to target.\n");

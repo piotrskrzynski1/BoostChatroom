@@ -1,6 +1,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 
+
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 
 file(GLOB_RECURSE MESSAGE_SOURCES CONFIGURE_DEPENDS
