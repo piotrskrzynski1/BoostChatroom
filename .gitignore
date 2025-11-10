@@ -2,4 +2,4 @@
 .idea
 .git
 out
-cmake-build*
+cmake-build*/

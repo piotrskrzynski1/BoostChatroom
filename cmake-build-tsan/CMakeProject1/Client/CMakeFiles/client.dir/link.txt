@@ -1,1 +1,0 @@
-/usr/bin/g++ -g -fsanitize=thread CMakeFiles/client.dir/src/ClientMain.cpp.o CMakeFiles/client.dir/src/Server/ClientServerManager.cpp.o CMakeFiles/client.dir/src/Server/CommandProcessor.cpp.o -o client  ../Shared/libMessages.a 
