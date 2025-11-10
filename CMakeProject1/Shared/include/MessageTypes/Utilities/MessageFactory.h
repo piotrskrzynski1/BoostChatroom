@@ -7,5 +7,9 @@
 
 class MessageFactory {
 public:
-    static std::unique_ptr<IMessage> create_from_id(uint32_t id);
+    /**
+     * @brief creates a message from a given id
+     * @param id Message::TextTypes id
+     */
+    static std::unique_ptr<IMessage> create_from_id(TextTypes id);
 };

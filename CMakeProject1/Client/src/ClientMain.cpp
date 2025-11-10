@@ -1,46 +1,50 @@
 ﻿#include <iostream>
 #include <string>
 #include <memory>
-#include <vector>
-#include <cstring>
-#include <regex>
 #include <boost/asio.hpp>
 #include <thread>
-#include <../../Shared/include/MessageTypes/Text/TextMessage.h>
-#include <Server/ClientServerManager.h>
-#include <Server/ServerMessageSender.h>
+#include <MessageTypes/Text/TextMessage.h>
+#include <Server/ClientServerConnectionManager.h>
+#include <Server/CommandProcessor.h>
 
-#include "MessageTypes/File/FileMessage.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
 #else
-#include <arpa/inet.h> // Dla ntohl, htonl endiany i te sprawy
+#include <arpa/inet.h>
 #endif
 
-bool match_file_command(const std::string& input, std::string& path_out)
-{
-    // Regex explanation:
-    // ^/find\\s+   → starts with "/find" followed by at least one space
-    // (.+)$        → capture the rest of the line as group 1 (the path)
-    static const std::regex pattern{R"(^/file\s+(.+)$)"};
-
-    std::smatch match;
-    if (std::regex_match(input, match, pattern)) {
-        path_out = match[1].str(); // captured path
-        return true;
-    }
-    return false;
-}
-
-int main()
+void send_text_message(ClientServerConnectionManager& mng, const std::string& line)
 {
     try
     {
+        TextMessage text(line);
+        std::shared_ptr<IMessage> pointer = std::make_shared<TextMessage>(text);
+        mng.Message(TextTypes::Text, pointer);
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "TextMessage send failed: " << e.what() << std::endl;
+    }
+}
+
+
+int main()
+
+{
+    try
+
+    {
         boost::asio::io_context io_context;
-        const ClientServerManager mng(io_context);
+
+        //create clientservermanager
+        ClientServerConnectionManager mng(io_context, "127.0.0.1", 5555, 5556);
+
+        // Create command processor
+        CommandProcessor command_processor;
 
         std::thread t([&io_context]()
+
         {
             try
             {
@@ -52,42 +56,39 @@ int main()
             }
         });
 
-        std::cout << "Enter messages (type 'quit' to exit):" << std::endl;
+        std::cout << "Enter messages (type 'quit' to exit). Type /help for commands." << std::endl;
+
+        // --- Main Application Loop ---
 
         std::string line;
+
+        //get line from cin
         while (std::getline(std::cin, line))
         {
             if (line == "quit") break;
+            if (line.empty()) continue;
 
-            if (!line.empty())
+            // Ask the processor to handle the line.
+            // If it returns false, it wasn't a command.
+            if (!command_processor.process(mng, line))
             {
-                std::string path;
-                if (match_file_command(line, path))
-                {
-                    try {
-                        FileMessage file(path);
-                        std::shared_ptr<IMessage> pointer = std::make_shared<FileMessage>(file);
-                        mng.Message(TextTypes::File, pointer);
-                    }
-                    catch (const std::exception& e) {
-                        std::cerr << "FileMessage creation failed: " << e.what() << std::endl;
-                    }
-                }else
-                {
-                    TextMessage text(line);
-                    std::shared_ptr<IMessage> pointer = std::make_shared<TextMessage>(text);
-                    mng.Message(TextTypes::Text,pointer);
-                }
+                // Not a command, send as a text message
+                send_text_message(mng, line);
             }
         }
 
+
         mng.Disconnect();
+
         t.join();
     }
+
     catch (std::exception& e)
+
     {
         std::cerr << "Main exception: " << e.what() << "\n";
     }
+
 
     return 0;
 }

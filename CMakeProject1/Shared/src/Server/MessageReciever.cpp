@@ -2,8 +2,10 @@
 #include <MessageTypes/Text/TextMessage.h>
 #include <cstring>
 #include <iostream>
-#include <MessageTypes/Utilities/HeaderHelper.h>
+#include <MessageTypes/Utilities/HeaderHelper.hpp>
 #include <MessageTypes/Utilities/MessageFactory.h>
+
+#include "MessageTypes/File/FileMessage.h"
 
 #ifdef _DEBUG
 #define LOG(x) std::cout << "[DEBUG] " << x << std::endl
@@ -12,9 +14,9 @@
 #endif
 
 // --- helper for 64-bit endianness ---
-static uint64_t ntohll(uint64_t value)
+static uint64_t ntohll(const uint64_t value)
 {
-    static const int num = 1;
+    static constexpr int num = 1;
     if (*reinterpret_cast<const char*>(&num) == 1)
     {
         // little endian → swap 32-bit halves
@@ -50,36 +52,67 @@ void MessageReciever::start_read_body(std::shared_ptr<std::vector<char>> header_
         });
 }
 
-void MessageReciever::handle_read_message(std::shared_ptr<std::vector<char>> buffer,
-                                          const boost::system::error_code& error,
-                                          std::size_t bytes_transferred,
-                                          std::shared_ptr<boost::asio::ip::tcp::socket> socket,
-                                          std::shared_ptr<std::string> napis)
+void MessageReciever::handle_read_message(
+    const std::shared_ptr<std::vector<char>>& buffer,
+    const boost::system::error_code& error,
+    std::size_t bytes_transferred,
+    const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
+    const std::shared_ptr<std::string>& napis)
 {
-    if (error == boost::asio::error::eof) {
-        std::cout << "Server closed the connection.\n";
-        return;
-    } else if (error) {
-        std::cerr << "Read error: " << error.message() << std::endl;
+    if (error) {
+        if (error == boost::asio::error::eof) {
+            std::cout << "Client closed the connection.\n";
+        } else if (error == boost::asio::error::operation_aborted)
+        {
+            std::cout << "connection canceled.\n" << std::endl;
+        }
+        else {
+            std::cerr << "Read error: " << error.message() << std::endl;
+        }
+
+        if (socket->is_open())
+        {
+            boost::system::error_code ec;
+            socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+            socket->close(ec);
+            if (ec)
+            {
+                std::cerr << ec.what() << std::endl;
+            }
+        }
         return;
     }
-
-    buffer->resize(bytes_transferred);
 
     try {
         uint32_t id;
         Utils::HeaderHelper::read_u32(*buffer, 0, id);
 
-        auto message = MessageFactory::create_from_id(id);
+        // Create the correct message type
+        auto type = static_cast<TextTypes>(id);
+        std::unique_ptr<IMessage> message = MessageFactory::create_from_id(type);
         message->deserialize(*buffer);
 
-        std::string message_str = message->to_string();
-        std::cout << message_str << std::endl;
 
-        message->save_file();
+        // Print and save depending on message type
+        if (auto textMsg = dynamic_cast<TextMessage*>(message.get())) {
+            std::string msg_str = textMsg->to_string();
+            std::cout << msg_str << std::endl;
+            if (on_message_text) on_message_text(socket, msg_str);
+        }
+        else if (auto fileMsg = dynamic_cast<FileMessage*>(message.get())) {
+            fileMsg->save_file(); // saves to disk
+            std::cout << fileMsg->to_string() << std::endl;
+            if (on_message_file) {
+                auto msg_bytes = std::make_shared<std::vector<char>>(message->serialize());
+                on_message_file(socket, msg_bytes);
+            }
+        }
+        else {
+            std::cerr << "Unknown message type after factory: ID " << id << std::endl;
+        }
 
-        if (on_message) on_message(socket, message_str);
-        if (napis) *napis = message_str;
+        if (napis)
+            *napis = std::string(buffer->begin(), buffer->end());
     }
     catch (const std::exception& e) {
         std::cerr << "Deserialization error: " << e.what() << std::endl;
@@ -88,14 +121,15 @@ void MessageReciever::handle_read_message(std::shared_ptr<std::vector<char>> buf
     this->start_read_header(socket);
 }
 
+
 void MessageReciever::start_read_header(std::shared_ptr<boost::asio::ip::tcp::socket> socket,
                                         std::shared_ptr<std::string> napis)
 {
-    const size_t header_size = sizeof(uint32_t) + sizeof(uint64_t);
+    constexpr size_t header_size = sizeof(uint32_t) + sizeof(uint64_t);
     auto header_buffer = std::make_shared<std::vector<char>>(header_size);
 
     boost::asio::async_read(*socket, boost::asio::buffer(*header_buffer),
-        [header_buffer, header_size, this, socket, napis](const boost::system::error_code& err, std::size_t bytes_transferred)
+        [header_buffer, this, socket, napis](const boost::system::error_code& err, std::size_t bytes_transferred)
         {
             if (err) {
                 handle_read_message(header_buffer, err, bytes_transferred, socket, napis);
@@ -113,7 +147,7 @@ void MessageReciever::start_read_header(std::shared_ptr<boost::asio::ip::tcp::so
             std::memcpy(&id, header_buffer->data(), sizeof(uint32_t));
             id = ntohl(id);
             std::memcpy(&body_length, header_buffer->data() + sizeof(uint32_t), sizeof(uint64_t));
-            body_length = ntohll(body_length);   // ✅ fixed 64-bit conversion
+            body_length = ntohll(body_length);   // 64-bit conversion
 
             if (body_length != 0) {
                 start_read_body(header_buffer, body_length, socket, napis);
@@ -128,5 +162,11 @@ void MessageReciever::start_read_header(std::shared_ptr<boost::asio::ip::tcp::so
 void MessageReciever::set_on_message_callback(
     std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::string&)> callback)
 {
-    on_message = std::move(callback);
+    on_message_text = std::move(callback);
+}
+
+void MessageReciever::set_on_file_callback(
+    std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::shared_ptr<std::vector<char>>&)> callback)
+{
+    on_message_file = std::move(callback);
 }

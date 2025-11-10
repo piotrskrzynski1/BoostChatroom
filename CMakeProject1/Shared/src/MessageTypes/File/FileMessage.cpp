@@ -1,7 +1,26 @@
 #include <fstream>
 #include <iostream>
 #include <MessageTypes/File/FileMessage.h>
-#include <MessageTypes/Utilities/HeaderHelper.h>
+#include <MessageTypes/Utilities/HeaderHelper.hpp>
+// from uint8_t bytes
+FileMessage::FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes)
+{
+    if (bytes.empty()) {
+        throw std::runtime_error("Empty byte data for FileMessage: " + filename);
+    }
+    filename_ = filename;
+    bytes_.assign(bytes.begin(), bytes.end());
+}
+
+// from char bytes
+FileMessage::FileMessage(const std::string& filename, const std::vector<char>& bytes)
+{
+    if (bytes.empty()) {
+        throw std::runtime_error("Empty byte data for FileMessage: " + filename);
+    }
+    filename_ = filename;
+    bytes_ = bytes;
+}
 
 FileMessage::FileMessage(const std::filesystem::path& path)
 {
@@ -12,7 +31,6 @@ FileMessage::FileMessage(const std::filesystem::path& path)
         throw std::runtime_error("Path is not a regular file: " + path.string());
     }
 
-    // Read file bytes
     const auto file_size = std::filesystem::file_size(path);
     bytes_.resize(static_cast<size_t>(file_size));
 
@@ -22,23 +40,24 @@ FileMessage::FileMessage(const std::filesystem::path& path)
     file.read(reinterpret_cast<char*>(bytes_.data()), file_size);
     if (!file) throw std::runtime_error("Failed to read full file: " + path.string());
 
-    // Store the filename (with extension)
     filename_ = path.filename().string();
 }
 
 std::vector<char> FileMessage::serialize() const
 {
-    const uint32_t id = static_cast<uint32_t>(TextTypes::File);
+    constexpr uint32_t id = static_cast<uint32_t>(TextTypes::File); // host order
     const uint64_t name_length = filename_.size();
     const uint64_t file_length = bytes_.size();
 
-    size_t total_size = sizeof(id) + sizeof(name_length) + sizeof(file_length)
-                        + name_length + file_length;
+    const uint64_t payload_size = sizeof(name_length) + sizeof(file_length) + name_length + file_length;
+    const uint64_t total_size = sizeof(id) + sizeof(payload_size) + payload_size;
 
     std::vector<char> buffer;
-    buffer.reserve(total_size);
+    buffer.reserve(static_cast<size_t>(total_size));
 
+    // HeaderHelper takes care of converting to network byte order
     Utils::HeaderHelper::append_u32(buffer, id);
+    Utils::HeaderHelper::append_u64(buffer, payload_size);
     Utils::HeaderHelper::append_u64(buffer, name_length);
     Utils::HeaderHelper::append_u64(buffer, file_length);
 
@@ -48,29 +67,47 @@ std::vector<char> FileMessage::serialize() const
     return buffer;
 }
 
+
 void FileMessage::deserialize(const std::vector<char>& data)
 {
-    if (data.size() < sizeof(uint32_t) + 2 * sizeof(uint64_t))
-        throw std::runtime_error("Invalid FileMessage data");
+    if (data.size() < sizeof(uint32_t) + sizeof(uint64_t))
+    {
+        throw std::runtime_error("Message is too short in deserialzation");
+    }
 
-    uint32_t id;
-    Utils::HeaderHelper::read_u32(data, 0, id);
+    // Basic structural check
+    if (data.size() < sizeof(uint32_t) + 3 * sizeof(uint64_t))
+        throw std::runtime_error("Invalid FileMessage data (too short)");
+
+    size_t offset = 0;
+
+    uint32_t id = 0;
+    Utils::HeaderHelper::read_u32(data, offset, id);
+    offset += sizeof(uint32_t);
+
+    uint64_t payload_size = 0;
+    Utils::HeaderHelper::read_u64(data, offset, payload_size);
+    offset += sizeof(uint64_t);
 
     uint64_t name_length = 0;
-    uint64_t file_length = 0;
-    Utils::HeaderHelper::read_u64(data, sizeof(uint32_t), name_length);
-    Utils::HeaderHelper::read_u64(data, sizeof(uint32_t) + sizeof(uint64_t), file_length);
+    Utils::HeaderHelper::read_u64(data, offset, name_length);
+    offset += sizeof(uint64_t);
 
-    size_t expected_total = sizeof(uint32_t) + 2 * sizeof(uint64_t) + name_length + file_length;
+    uint64_t file_length = 0;
+    Utils::HeaderHelper::read_u64(data, offset, file_length);
+    offset += sizeof(uint64_t);
+
+    size_t expected_total = sizeof(uint32_t) + sizeof(uint64_t) + static_cast<size_t>(payload_size);
     if (data.size() < expected_total)
         throw std::runtime_error("Incomplete FileMessage buffer");
 
-    // Extract filename and bytes
-    size_t name_start = sizeof(uint32_t) + 2 * sizeof(uint64_t);
-    filename_ = std::string(data.begin() + name_start, data.begin() + name_start + name_length);
+    if (data.size() < offset + name_length + file_length)
+        throw std::runtime_error("Corrupted FileMessage lengths");
 
-    size_t file_start = name_start + name_length;
-    bytes_ = std::vector<char>(data.begin() + file_start, data.begin() + file_start + file_length);
+    filename_.assign(data.begin() + offset, data.begin() + offset + name_length);
+    offset += static_cast<size_t>(name_length);
+
+    bytes_.assign(data.begin() + offset, data.begin() + offset + file_length);
 }
 
 std::string FileMessage::to_string() const
@@ -78,27 +115,39 @@ std::string FileMessage::to_string() const
     return "FileMessage: " + filename_ + " (" + std::to_string(bytes_.size()) + " bytes)";
 }
 
+std::vector<char> FileMessage::to_data_send() const
+{
+    return bytes_;
+}
 void FileMessage::save_file() const
 {
-    namespace fs = std::filesystem;
+    // std::cout << "[DEBUG] bytes_ size = " << bytes_.size() << "\n";  // REMOVED
 
+    namespace fs = std::filesystem;
     try {
-        fs::path images_dir = fs::current_path() / "images";
-        if (!fs::exists(images_dir))
-            fs::create_directories(images_dir);
+        if (bytes_.empty()) {
+            std::cerr << "No data to write!\n";
+            return;
+        }
+        fs::path output_dir = "/home/pioskr3459/Desktop";
+        if (!fs::exists(output_dir))
+            fs::create_directories(output_dir);
 
         std::string filename = filename_.empty() ? "received_file.bin" : filename_;
-        fs::path output_path = images_dir / filename;
+        fs::path output_path = output_dir / filename;
 
         std::ofstream out_file(output_path, std::ios::binary);
-        if (!out_file) throw std::runtime_error("Cannot write file: " + output_path.string());
+        if (!out_file)
+            throw std::runtime_error("Cannot write file: " + output_path.string());
 
         out_file.write(reinterpret_cast<const char*>(bytes_.data()), bytes_.size());
         out_file.close();
 
-        std::cout << "✅ File saved: " << output_path << " (" << bytes_.size() << " bytes)\n";
+        // Optional: Keep this for actual errors/important info
+        // std::cout << "File saved: " << output_path << " (" << bytes_.size() << " bytes)\n";
     }
     catch (const std::exception& e) {
-        std::cerr << "❌ FileMessage::save_file error: " << e.what() << std::endl;
+        std::cerr << "FileMessage::save_file error: " << e.what() << std::endl;
     }
 }
+

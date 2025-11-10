@@ -1,6 +1,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 
+
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 
 file(GLOB_RECURSE MESSAGE_SOURCES CONFIGURE_DEPENDS
@@ -9,11 +10,13 @@ file(GLOB_RECURSE MESSAGE_SOURCES CONFIGURE_DEPENDS
 )
 
 add_library(Messages STATIC ${MESSAGE_SOURCES}
-        include/MessageTypes/Utilities/HeaderHelper.h
+        include/MessageTypes/Utilities/HeaderHelper.hpp
         src/MessageTypes/File/FileMessage.cpp
         include/MessageTypes/File/FileMessage.h
         src/MessageTypes/Utilities/MessageFactory.cpp
-        include/MessageTypes/Utilities/MessageFactory.h)
+        include/MessageTypes/Utilities/MessageFactory.h
+        src/MessageTypes/Utilities/FileTransferQueue.cpp
+        include/MessageTypes/Utilities/FileTransferQueue.h)
 
 target_include_directories(Messages PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
