@@ -40,6 +40,10 @@ std::vector<char> TextMessage::serialize() const
 
 void TextMessage::deserialize(const std::vector<char>& data)
 {
+    if (data.size() < sizeof(uint32_t) + sizeof(uint64_t))
+    {
+        throw std::runtime_error("Message is too short in deserialzation");
+    }
     if (data.size() < sizeof(uint32_t) + sizeof(uint64_t)) return;
 
     uint32_t id;

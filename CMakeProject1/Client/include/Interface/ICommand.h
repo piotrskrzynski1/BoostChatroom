@@ -2,7 +2,7 @@
 #pragma once
 
 #include <string>
-#include <Server/ClientServerManager.h>
+#include <Server/ClientServerConnectionManager.h>
 
 /**
  * @brief Abstract base class for all client commands.
@@ -16,5 +16,5 @@ public:
      * @param mng The ClientServerManager to operate on.
      * @param args The arguments for the command (the string after the command name).
      */
-    virtual void execute(ClientServerManager& mng, const std::string& args) = 0;
+    virtual void execute(ClientServerConnectionManager& mng, const std::string& args) = 0;
 };

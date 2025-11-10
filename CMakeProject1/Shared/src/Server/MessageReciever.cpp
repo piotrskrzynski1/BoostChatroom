@@ -75,6 +75,10 @@ void MessageReciever::handle_read_message(
             boost::system::error_code ec;
             socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
             socket->close(ec);
+            if (ec)
+            {
+                std::cerr << ec.what() << std::endl;
+            }
         }
         return;
     }
@@ -84,7 +88,8 @@ void MessageReciever::handle_read_message(
         Utils::HeaderHelper::read_u32(*buffer, 0, id);
 
         // Create the correct message type
-        std::unique_ptr<IMessage> message = MessageFactory::create_from_id(id);
+        auto type = static_cast<TextTypes>(id);
+        std::unique_ptr<IMessage> message = MessageFactory::create_from_id(type);
         message->deserialize(*buffer);
 
 

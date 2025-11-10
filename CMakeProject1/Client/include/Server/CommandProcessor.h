@@ -16,11 +16,11 @@ public:
 
     /**
      * @brief Tries to find and execute a command from a full input line.
-     * @param mng The ClientServerManager to pass to the command.
+     * @param mng The ClientServerConnectionManager to pass to the command.
      * @param line The raw line of input from the user.
      * @return true if a command was found and executed, false otherwise.
      */
-    bool process(ClientServerManager& mng, const std::string& line);
+    bool process(ClientServerConnectionManager& mng, const std::string& line);
 
 private:
     std::unordered_map<std::string, std::unique_ptr<ICommand>> commands_;

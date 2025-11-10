@@ -1,4 +1,4 @@
-#include <Server/ClientServerManager.h>
+#include <Server/ClientServerConnectionManager.h>
 
 #include <MessageTypes/Text/TextMessage.h>
 
@@ -14,7 +14,7 @@
 using boost::asio::ip::tcp;
 
 
-void ClientServerManager::handle_connect(const boost::system::error_code& error,
+void ClientServerConnectionManager::handle_connect(const boost::system::error_code& error,
 
                                          const std::string& socket_name,
 
@@ -37,7 +37,7 @@ void ClientServerManager::handle_connect(const boost::system::error_code& error,
         << " | Port: " << socket->remote_endpoint().port() << std::endl;
 
 
-    // ✅ CRITICAL FIX: Start the correct receiver for the correct socket
+    // Start the correct receiver for the correct socket
 
     if (socket_name == "TextSocket")
 
@@ -53,7 +53,7 @@ void ClientServerManager::handle_connect(const boost::system::error_code& error,
 }
 
 
-ClientServerManager::ClientServerManager(boost::asio::io_context& io, std::string ip, unsigned short int textport,
+ClientServerConnectionManager::ClientServerConnectionManager(boost::asio::io_context& io, std::string ip, unsigned short int textport,
 
                                          unsigned short int fileport) : io_context_(io)
 
@@ -79,7 +79,7 @@ ClientServerManager::ClientServerManager(boost::asio::io_context& io, std::strin
         });
 
 
-        // ✅ ADDED: Configure the callbacks for both receiver instances
+        // Configure the callbacks for both receiver instances
 
 
         // 1. Configure the TEXT receiver
@@ -152,16 +152,16 @@ ClientServerManager::ClientServerManager(boost::asio::io_context& io, std::strin
 }
 
 
-// ✅ ADDED: Implementation for the new callback setters
+// Implementation for callback setters
 
-void ClientServerManager::set_on_text_message_callback(std::function<void(const std::string&)> cb)
+void ClientServerConnectionManager::set_on_text_message_callback(std::function<void(const std::string&)> cb)
 
 {
     on_text_message_ = std::move(cb);
 }
 
 
-void ClientServerManager::set_on_file_message_callback(std::function<void(std::shared_ptr<FileMessage>)> cb)
+void ClientServerConnectionManager::set_on_file_message_callback(std::function<void(std::shared_ptr<FileMessage>)> cb)
 
 {
     on_file_message_ = std::move(cb);
@@ -171,7 +171,7 @@ void ClientServerManager::set_on_file_message_callback(std::function<void(std::s
 // --- The rest of your methods are unchanged ---
 
 
-void ClientServerManager::Disconnect() const
+void ClientServerConnectionManager::Disconnect() const
 
 {
     auto disconnect_socket = [](const std::shared_ptr<tcp::socket>& sock, const std::string& name)
@@ -215,7 +215,7 @@ void ClientServerManager::Disconnect() const
 }
 
 
-void ClientServerManager::Message(const TextTypes type, const std::shared_ptr<IMessage>& message) const
+void ClientServerConnectionManager::Message(const TextTypes type, const std::shared_ptr<IMessage>& message) const
 
 {
     boost::system::error_code err;
@@ -272,7 +272,7 @@ void ClientServerManager::Message(const TextTypes type, const std::shared_ptr<IM
 }
 
 
-uint64_t ClientServerManager::EnqueueFile(const std::filesystem::path& path) const
+uint64_t ClientServerConnectionManager::EnqueueFile(const std::filesystem::path& path) const
 
 {
     if (!file_queue_)
@@ -287,7 +287,7 @@ uint64_t ClientServerManager::EnqueueFile(const std::filesystem::path& path) con
 }
 
 
-void ClientServerManager::CancelAndReconnectFileSocket()
+void ClientServerConnectionManager::CancelAndReconnectFileSocket()
 
 {
     // 1) pause queue so worker won't immediately start new items
@@ -357,7 +357,7 @@ void ClientServerManager::CancelAndReconnectFileSocket()
 }
 
 
-std::vector<FileTransferQueue::Item> ClientServerManager::FileQueueSnapshot() const
+std::vector<FileTransferQueue::Item> ClientServerConnectionManager::FileQueueSnapshot() const
 
 {
     if (file_queue_) return file_queue_->list_snapshot();
@@ -366,28 +366,28 @@ std::vector<FileTransferQueue::Item> ClientServerManager::FileQueueSnapshot() co
 }
 
 
-void ClientServerManager::PauseQueue() const
+void ClientServerConnectionManager::PauseQueue() const
 
 {
     if (file_queue_) file_queue_->pause();
 }
 
 
-void ClientServerManager::ResumeQueue() const
+void ClientServerConnectionManager::ResumeQueue() const
 
 {
     if (file_queue_) file_queue_->resume();
 }
 
 
-void ClientServerManager::CancelFile(uint64_t id) const
+void ClientServerConnectionManager::CancelFile(uint64_t id) const
 
 {
     if (file_queue_) file_queue_->cancel(id);
 }
 
 
-void ClientServerManager::RetryFile(uint64_t id) const
+void ClientServerConnectionManager::RetryFile(uint64_t id) const
 
 {
     if (file_queue_) file_queue_->retry(id);

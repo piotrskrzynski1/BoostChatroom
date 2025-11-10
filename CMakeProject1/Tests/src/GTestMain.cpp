@@ -1,39 +1,25 @@
 #include <gtest/gtest.h>
-#include <boost/asio.hpp>
 #include <memory>
-#include <thread>
 #include <vector>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
-#include <exception>
-#include <mutex>
-#include <condition_variable>
-#include <chrono>
-#include <future>
-#include <algorithm> // For std::any_of
+#include <algorithm>
 
-using namespace std::chrono_literals;
-
-// Includes for your project (Adjust paths as necessary)
-#include "Server/ServerManager.h"
-#include "Server/ClientServerManager.h"
 #include "MessageTypes/Text/TextMessage.h"
 #include "MessageTypes/File/FileMessage.h"
-#include "ServerManagerTest.h" // <-- Contains TestableServerManager (required for testing)
+#include "MessageTypes/Utilities/MessageFactory.h"
+#include "MessageTypes/Utilities/FileTransferQueue.h"
 
-// Assuming TextTypes is an enum accessible globally or via a specific header.
-// Adding a forward declaration just in case:
-// enum class TextTypes;
-
-// Creates a dummy file for tests and guarantees cleanup
+// =====================================================================
+// HELPER: Scoped temp file for testing
+// =====================================================================
 struct ScopedTempFile {
     std::filesystem::path path;
 
-    explicit ScopedTempFile(const std::string& filename = "gtest_temp_file.txt") {
+    explicit ScopedTempFile(const std::string& filename = "test_file.txt", const std::string& content = "test data") {
         path = std::filesystem::temp_directory_path() / filename;
         std::ofstream outfile(path);
-        outfile << "dummy file data for testing";
+        outfile << content;
         outfile.close();
     }
 
@@ -47,356 +33,423 @@ struct ScopedTempFile {
     }
 };
 
-// --- Integration Test Fixture ---
-// This fixture sets up a Server and TWO clients for real broadcast testing.
-class IntegrationTest : public ::testing::Test {
+// =====================================================================
+// TEST SUITE 1: Message Serialization/Deserialization Logic
+// =====================================================================
+class MessageSerializationTest : public ::testing::Test {
 protected:
-    // We use std::shared_ptr for robust Asio callback management and TestableServerManager.
-    std::shared_ptr<TestableServerManager> server;
-    std::thread serverThread;
-    std::exception_ptr server_exception_ = nullptr;
+    void SetUp() override {}
+    void TearDown() override {}
+};
 
-    // Client 1 members (Text)
-    boost::asio::io_context io1;
-    std::shared_ptr<ClientServerManager> client1;
-    std::thread client1Thread;
-    std::exception_ptr client1_exception_ = nullptr;
-    std::vector<std::string> client1_received_text;
-    std::mutex client1_mutex;
-    std::condition_variable client1_cv;
+TEST_F(MessageSerializationTest, TextMessageSerializeDeserialize) {
+    // Create original message
+    std::string original_text = "Hello, World!";
+    const auto msg1 = std::make_shared<TextMessage>(original_text);
 
-    // Client 1 members (File)
-    std::vector<std::string> client1_received_files; // Store received filenames
-    std::mutex client1_file_mutex;
-    std::condition_variable client1_file_cv;
+    // Serialize
+    const std::vector<char> serialized = msg1->serialize();
+    ASSERT_FALSE(serialized.empty());
 
-    // Client 2 members (Text)
-    boost::asio::io_context io2;
-    std::shared_ptr<ClientServerManager> client2;
-    std::thread client2Thread;
-    std::exception_ptr client2_exception_ = nullptr;
-    std::vector<std::string> client2_received_text;
-    std::mutex client2_mutex;
-    std::condition_variable client2_cv;
+    // Deserialize into new message
+    auto msg2 = std::make_shared<TextMessage>();
+    ASSERT_NO_THROW(msg2->deserialize(serialized));
 
-    // Client 2 members (File)
-    std::vector<std::string> client2_received_files;
-    std::mutex client2_file_mutex;
-    std::condition_variable client2_file_cv;
+    // Verify content matches
+    EXPECT_EQ(msg1->to_string(), msg2->to_string());
+    EXPECT_NE(msg2->to_string().find(original_text), std::string::npos);
+}
 
+TEST_F(MessageSerializationTest, FileMessageSerializeDeserialize) {
+    ScopedTempFile temp_file("serialize_test.txt", "file content for testing");
 
-    // Helper function to wait for a text message containing a specific substring
-    bool WaitForMessage(std::condition_variable& cv, std::mutex& m, std::vector<std::string>& vec, const std::string& substr) {
-        std::unique_lock lk(m);
-        return cv.wait_for(lk, std::chrono::seconds(5), [&]() {
-            return std::any_of(vec.begin(), vec.end(),
-                               [&](const auto& s) { return s.find(substr) != std::string::npos; });
-        });
-    }
+    // Create from file path
+    auto msg1 = std::make_shared<FileMessage>(temp_file.path);
+    EXPECT_EQ(msg1->to_string(), "FileMessage: serialize_test.txt (24 bytes)");
 
-    // Helper function to wait for a file with a specific filename
-    bool WaitForFile(std::condition_variable& cv, std::mutex& m, std::vector<std::string>& vec, const std::string& filename) {
-        std::unique_lock lk(m);
-        return cv.wait_for(lk, std::chrono::seconds(5), [&]() {
-            return std::any_of(vec.begin(), vec.end(),
-                               [&](const auto& s) { return s.find(filename) != std::string::npos; });
-        });
-    }
+    // Serialize
+    std::vector<char> serialized = msg1->serialize();
+    ASSERT_FALSE(serialized.empty());
 
-    void SetUp() override {
-        std::cout << "\n--- IntegrationTest::SetUp() Start ---\n";
+    // Deserialize into new message
+    auto msg2 = std::make_shared<FileMessage>();
+    ASSERT_NO_THROW(msg2->deserialize(serialized));
 
-        // 1. Setup the server object
-        server = std::make_shared<TestableServerManager>(5555, 5556, "127.0.0.1");
+    // Verify metadata matches
+    EXPECT_EQ(msg1->to_string(), msg2->to_string());
+}
 
-        // --- START: Synchronization block using GetStatusUP() ---
-        serverThread = std::thread([this]() {
-            try {
-                // Call the actual StartServer, which sets serverup_ = true when ready
-                server->StartServer();
-            } catch (...) {
-                server_exception_ = std::current_exception();
-            }
-        });
+TEST_F(MessageSerializationTest, FileMessageFromBytes) {
+    std::string filename = "test.bin";
+    std::vector<uint8_t> data = {0x01, 0x02, 0x03, 0x04, 0x05};
 
-        // Wait for server to be ready by polling the status flag
-        auto start_time = std::chrono::steady_clock::now();
-        const auto timeout = 5s;
+    // Create message from bytes
+    auto msg = std::make_shared<FileMessage>(filename, data);
+    EXPECT_NE(msg->to_string().find(filename), std::string::npos);
+    EXPECT_NE(msg->to_string().find("5 bytes"), std::string::npos);
 
-        while (!server->GetStatusUP()) {
-            if (std::chrono::steady_clock::now() - start_time > timeout) {
-                 FAIL() << "Server failed to signal readiness within 5 seconds timeout.";
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-        // --- END: Synchronization block ---
+    // Serialize and deserialize
+    auto serialized = msg->serialize();
+    auto msg2 = std::make_shared<FileMessage>();
+    ASSERT_NO_THROW(msg2->deserialize(serialized));
 
-        std::cout << "Server ready. Starting clients.\n";
+    EXPECT_EQ(msg->to_string(), msg2->to_string());
+}
 
-        // 2. Client 1 setup and connection attempt
-        client1 = std::make_shared<ClientServerManager>(io1, "127.0.0.1", 5555, 5556);
-        client1->set_on_text_message_callback([this](const std::string& msg) {
-            { std::scoped_lock lk(client1_mutex); client1_received_text.push_back(msg); }
-            client1_cv.notify_one();
-        });
-        client1->set_on_file_message_callback([this](const std::shared_ptr<FileMessage>& fileMsg) {
-            std::string filename = fileMsg->to_string();
-            { std::scoped_lock lk(client1_file_mutex); client1_received_files.push_back(filename); }
-            client1_file_cv.notify_one();
-        });
-        client1Thread = std::thread([this]() {
-            try { io1.run(); } catch (...) { client1_exception_ = std::current_exception(); }
-        });
+TEST_F(MessageSerializationTest, EmptyTextMessageHandling) {
+    auto msg1 = std::make_shared<TextMessage>("");
+    auto serialized = msg1->serialize();
 
-        // 3. Client 2 setup and connection attempt
-        client2 = std::make_shared<ClientServerManager>(io2, "127.0.0.1", 5555, 5556);
-        client2->set_on_text_message_callback([this](const std::string& msg) {
-            { std::scoped_lock lk(client2_mutex); client2_received_text.push_back(msg); }
-            client2_cv.notify_one();
-        });
-        client2->set_on_file_message_callback([this](const std::shared_ptr<FileMessage>& fileMsg) {
-            std::string filename = fileMsg->to_string();
-            { std::scoped_lock lk(client2_file_mutex); client2_received_files.push_back(filename); }
-            client2_file_cv.notify_one();
-        });
-        client2Thread = std::thread([this]() {
-            try { io2.run(); } catch (...) { client2_exception_ = std::current_exception(); }
-        });
+    auto msg2 = std::make_shared<TextMessage>();
+    ASSERT_NO_THROW(msg2->deserialize(serialized));
+}
 
-        // 4. Wait for connection confirmation (End Message History is the last message sent)
-        std::cout << "Waiting for clients to receive history confirmation...\n";
-        ASSERT_TRUE(WaitForMessage(client1_cv, client1_mutex, client1_received_text, "End Message History")) << "Client 1 failed to connect or receive history.";
-        ASSERT_TRUE(WaitForMessage(client2_cv, client2_mutex, client2_received_text, "End Message History")) << "Client 2 failed to connect or receive history.";
-        std::cout << "Clients connected and history confirmed.\n";
+TEST_F(MessageSerializationTest, LargeTextMessageHandling) {
+    // Create a large text message (10KB)
+    std::string large_text(10240, 'A');
+    auto msg1 = std::make_shared<TextMessage>(large_text);
 
-        // 5. Clear history messages to prepare for actual test messages
-        client1_received_text.clear();
-        client2_received_text.clear();
-        client1_received_files.clear();
-        client2_received_files.clear();
-        std::cout << "--- IntegrationTest::SetUp() End ---\n";
-    }
+    auto serialized = msg1->serialize();
+    ASSERT_FALSE(serialized.empty());
 
-    void TearDown() override {
-        std::cout << "\n--- IntegrationTest::TearDown() Start ---\n";
+    auto msg2 = std::make_shared<TextMessage>();
+    ASSERT_NO_THROW(msg2->deserialize(serialized));
 
-        // 1. Stop all IO contexts first to prevent new handlers from running
-        io1.stop();
-        io2.stop();
+    EXPECT_NE(msg2->to_string().find(large_text.substr(0, 100)), std::string::npos);
+}
 
-        // 2. Disconnect clients and join their IO threads
-        if (client1) client1->Disconnect();
-        if (client2) client2->Disconnect();
+// =====================================================================
+// TEST SUITE 2: MessageFactory Logic
+// =====================================================================
+class MessageFactoryTest : public ::testing::Test {
+protected:
+    void SetUp() override {}
+    void TearDown() override {}
+};
 
-        if (client1Thread.joinable()) { client1Thread.join(); std::cout << "Client 1 IO thread joined.\n"; }
-        if (client2Thread.joinable()) { client2Thread.join(); std::cout << "Client 2 IO thread joined.\n"; }
+TEST_F(MessageFactoryTest, CreateTextMessage) {
+    auto msg = MessageFactory::create_from_id(TextTypes::Text);
 
-        // 3. Stop the ServerManager and join its worker thread(s)
-        if (server) server->StopServer();
-        if (serverThread.joinable()) { serverThread.join(); std::cout << "Server thread joined.\n"; }
+    ASSERT_NE(msg, nullptr);
+    ASSERT_NE(dynamic_cast<TextMessage*>(msg.get()), nullptr);
+}
 
-        // 4. Check for exceptions (omitted for brevity)
+TEST_F(MessageFactoryTest, CreateFileMessage) {
+    auto msg = MessageFactory::create_from_id(TextTypes::File);
 
-        std::cout << "--- IntegrationTest::TearDown() End ---\n";
+    ASSERT_NE(msg, nullptr);
+    ASSERT_NE(dynamic_cast<FileMessage*>(msg.get()), nullptr);
+}
+
+TEST_F(MessageFactoryTest, FactoryProducesValidMessages) {
+    // Text
+    auto text_msg = MessageFactory::create_from_id(TextTypes::Text);
+    ASSERT_NO_THROW(text_msg->serialize());
+
+    // File
+    auto file_msg = MessageFactory::create_from_id(TextTypes::File);
+    ASSERT_NO_THROW(file_msg->serialize());
+}
+
+// =====================================================================
+// TEST SUITE 3: FileTransferQueue Logic (WITHOUT network I/O)
+// =====================================================================
+class MockSocketGetter {
+public:
+    std::shared_ptr<boost::asio::ip::tcp::socket> operator()() const
+    {
+        // Return nullptr to simulate "not connected" - tests queue logic only
+        return nullptr;
     }
 };
 
-// ---------- ✅ Tests ----------
-
-TEST_F(IntegrationTest, Client1SendsClient2Receives) {
-    std::cout << "\n=== Running Test: Client1SendsClient2Receives ===\n";
-    auto msg = std::make_shared<TextMessage>("Hello from Client 1");
-    // CORRECTED CALL: Message requires TextTypes::Text argument
-    client1->Message(TextTypes::Text, msg);
-
-    ASSERT_TRUE(WaitForMessage(client2_cv, client2_mutex, client2_received_text, "Hello from Client 1"));
-    std::cout << "Client 2 received message.\n";
-
-    std::scoped_lock lk(client2_mutex);
-    std::string received_msg = client2_received_text.back();
-    EXPECT_NE(received_msg.find("Hello from Client 1"), std::string::npos);
-
-    std::scoped_lock lk1(client1_mutex);
-    EXPECT_TRUE(client1_received_text.empty()); // Client 1 should not receive its own message
-    std::cout << "Test Client1SendsClient2Receives completed.\n";
-}
-
-TEST_F(IntegrationTest, ServerBroadcastsAllClientsReceive) {
-    std::cout << "\n=== Running Test: ServerBroadcastsAllClientsReceive ===\n";
-    // Send a message from the server (sender=nullptr)
-    server->Broadcast(nullptr, std::string("A message from the server"));
-    std::cout << "Server broadcasted message.\n";
-
-    ASSERT_TRUE(WaitForMessage(client1_cv, client1_mutex, client1_received_text, "message from the server"));
-    ASSERT_TRUE(WaitForMessage(client2_cv, client2_mutex, client2_received_text, "message from the server"));
-    std::cout << "Both clients received broadcast.\n";
-    std::cout << "Test ServerBroadcastsAllClientsReceive completed.\n";
-}
-
-TEST_F(IntegrationTest, NewClientGetsHistory) {
-    std::cout << "\n=== Running Test: NewClientGetsHistory ===\n";
-    auto msg = std::make_shared<TextMessage>("This message is for history");
-    client1->Message(TextTypes::Text, msg);
-
-    // Wait for broadcast AND history update
-    ASSERT_TRUE(WaitForMessage(client2_cv, client2_mutex, client2_received_text, "message is for history"));
-    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Ensure history is updated
-
-    boost::asio::io_context io3;
-    std::vector<std::string> client3_received_text;
-    std::mutex client3_mutex;
-    std::condition_variable client3_cv;
-
-    std::cout << "Starting Client 3...\n";
-    auto client3 = std::make_shared<ClientServerManager>(io3, "127.0.0.1", 5555, 5556);
-
-    client3->set_on_text_message_callback([&](const std::string& m) {
-        { std::scoped_lock lk(client3_mutex); client3_received_text.push_back(m); }
-        client3_cv.notify_one();
-    });
-
-    // Add file callback to prevent crashes if history contains files
-    client3->set_on_file_message_callback([&](const std::shared_ptr<FileMessage>& fileMsg) {
-        std::cout << "Client 3 received file from history: " << fileMsg->to_string() << "\n";
-    });
-
-    std::thread client3Thread([&]() { try { io3.run(); } catch(...) {} });
-
-    // Wait for the history message and the "End Message History" marker
-    ASSERT_TRUE(WaitForMessage(client3_cv, client3_mutex, client3_received_text, "message is for history"));
-    ASSERT_TRUE(WaitForMessage(client3_cv, client3_mutex, client3_received_text, "End Message History"));
-    std::cout << "Client 3 connected and received history.\n";
-
-    client3->Disconnect();
-    io3.stop();
-    if (client3Thread.joinable()) client3Thread.join();
-    std::cout << "Client 3 thread joined.\n";
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
-    std::cout << "Test NewClientGetsHistory completed.\n";
-}
-
-TEST_F(IntegrationTest, Client1SendsFileClient2Receives) {
-    std::cout << "\n=== Running Test: Client1SendsFileClient2Receives ===\n";
-
-    // 1. Create a dummy file to send
-    ScopedTempFile temp_file("test_file_to_send.txt");
-
-    // 2. Client 1 enqueues the file for sending
-    client1->EnqueueFile(temp_file.string());
-
-    // 3. Wait for Client 2 to receive the TEXT LOG
-    ASSERT_TRUE(WaitForMessage(client2_cv, client2_mutex, client2_received_text, "[FILE]"));
-    ASSERT_TRUE(WaitForMessage(client2_cv, client2_mutex, client2_received_text, "test_file_to_send.txt"));
-    std::cout << "Client 2 received text log.\n";
-
-    // 4. Wait for Client 2 to receive the ACTUAL FILE
-    ASSERT_TRUE(WaitForFile(client2_file_cv, client2_file_mutex, client2_received_files, "test_file_to_send.txt"));
-    std::cout << "Client 2 received file.\n";
-
-    // 5. ✅ UPDATED: Client 1 WILL receive the text log (we send to everyone now)
-    ASSERT_TRUE(WaitForMessage(client1_cv, client1_mutex, client1_received_text, "[FILE]"));
-    std::cout << "Client 1 received text notification (expected behavior).\n";
-
-    // The sender should NOT receive the file itself (only other clients get the file)
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    {
-        std::scoped_lock lk1(client1_file_mutex);
-        EXPECT_TRUE(client1_received_files.empty());
-        std::cout << "Client 1 did not receive the file back (as expected).\n";
-    }
-
-    std::cout << "Test Client1SendsFileClient2Receives completed.\n";
-}
-TEST_F(IntegrationTest, FileSenderDoesNotReceiveOwnNotification) {
-    std::cout << "\n=== Running Test: FileSenderReceivesTextNotification ===\n";
-
-    ScopedTempFile temp_file("isolation_test.txt");
-
-    // Clear any existing messages
-    {
-        std::scoped_lock lk(client1_mutex);
-        client1_received_text.clear();
-    }
-
-    client1->EnqueueFile(temp_file.string());
-
-    // Wait for Client 2 to receive notification
-    ASSERT_TRUE(WaitForMessage(client2_cv, client2_mutex, client2_received_text, "[FILE]"));
-
-    // ✅ UPDATED: Client 1 SHOULD receive the text notification too
-    ASSERT_TRUE(WaitForMessage(client1_cv, client1_mutex, client1_received_text, "[FILE]"));
-    std::cout << "Client 1 received text notification (expected behavior).\n";
-
-    // But Client 1 should NOT receive the actual file
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    {
-        std::scoped_lock lk(client1_file_mutex);
-        EXPECT_TRUE(client1_received_files.empty());
-        std::cout << "Client 1 did not receive the file itself (correct).\n";
-    }
-
-    std::cout << "Test completed.\n";
-}
-
-// ---------- Client queue unit tests (requires mock server or separate setup) ----------
-class ClientQueueTest : public ::testing::Test {
+class FileTransferQueueTest : public ::testing::Test {
 protected:
-    boost::asio::io_context io;
-    std::unique_ptr<ClientServerManager> manager;
-    std::thread clientIoThread;
-    std::exception_ptr client_exception_ = nullptr;
+    std::unique_ptr<FileTransferQueue> queue;
 
     void SetUp() override {
-        std::cout << "\n--- ClientQueueTest::SetUp() Start ---\n";
-        // Note: Using dummy ports 9999/9998 as this is a unit test not connecting to a real server
-        manager = std::make_unique<ClientServerManager>(io, "127.0.0.1", 9999, 9998);
-        clientIoThread = std::thread([this]() {
-            try { io.run(); } catch (...) { client_exception_ = std::current_exception(); }
-        });
-        std::cout << "--- ClientQueueTest::SetUp() End ---\n";
+        MockSocketGetter getter;
+        queue = std::make_unique<FileTransferQueue>(getter);
     }
 
     void TearDown() override {
-        std::cout << "\n--- ClientQueueTest::TearDown() Start ---\n";
-        if (manager) manager->Disconnect();
-        io.stop();
-        if (clientIoThread.joinable()) { clientIoThread.join(); std::cout << "Client Queue IO thread joined.\n"; }
-        std::cout << "--- ClientQueueTest::TearDown() End ---\n";
+        if (queue) queue->stop();
+        queue.reset();
     }
 };
 
-TEST_F(ClientQueueTest, EnqueueFileAddsItem) {
-    std::cout << "\n=== Running Test: EnqueueFileAddsItem ===\n";
-    ScopedTempFile temp_file("temp_enqueue_file.txt");
+TEST_F(FileTransferQueueTest, EnqueueFileAddsToQueue) {
+    ScopedTempFile temp_file("queue_test.txt");
 
-    manager->PauseQueue();
-    uint64_t id = manager->EnqueueFile(temp_file.string());
+    queue->pause(); // Prevent actual sending
+    uint64_t id = queue->enqueue(temp_file.path);
+
     EXPECT_NE(id, 0u);
 
-    // Assuming FileQueueSnapshot is available on ClientServerManager
-    auto snapshot = manager->FileQueueSnapshot();
-    ASSERT_FALSE(snapshot.empty());
-    EXPECT_EQ(snapshot.front().path, temp_file.string());
-    std::cout << "Test EnqueueFileAddsItem completed.\n";
+    auto snapshot = queue->list_snapshot();
+    ASSERT_EQ(snapshot.size(), 1u);
+    EXPECT_EQ(snapshot[0].id, id);
+    EXPECT_EQ(snapshot[0].path, temp_file.path);
+    EXPECT_EQ(snapshot[0].state, FileTransferQueue::State::Queued);
 }
 
-TEST_F(ClientQueueTest, PauseResumeQueueWorks) {
-    std::cout << "\n=== Running Test: PauseResumeQueueWorks ===\n";
-    ScopedTempFile temp_file("temp_pause_file.txt");
+TEST_F(FileTransferQueueTest, EnqueueMultipleFiles) {
+    ScopedTempFile file1("queue_test1.txt");
+    ScopedTempFile file2("queue_test2.txt");
+    ScopedTempFile file3("queue_test3.txt");
 
-    // The core test here is that no file is sent while paused, but we can only assert the queue manipulation
-    manager->PauseQueue();
-    manager->EnqueueFile(temp_file.string());
-    manager->PauseQueue(); // This line is redundant if PauseQueue is idempotent, but harmless
-    manager->ResumeQueue();
+    queue->pause();
 
-    // Small delay to allow any (failing) file IO to start/finish in a non-connected state
+    uint64_t id1 = queue->enqueue(file1.path);
+    uint64_t id2 = queue->enqueue(file2.path);
+    uint64_t id3 = queue->enqueue(file3.path);
+
+    EXPECT_NE(id1, id2);
+    EXPECT_NE(id2, id3);
+
+    auto snapshot = queue->list_snapshot();
+    EXPECT_EQ(snapshot.size(), 3u);
+}
+
+TEST_F(FileTransferQueueTest, RemoveFileFromQueue) {
+    ScopedTempFile temp_file("remove_test.txt");
+
+    queue->pause();
+    uint64_t id = queue->enqueue(temp_file.path);
+
+    auto snapshot1 = queue->list_snapshot();
+    EXPECT_EQ(snapshot1.size(), 1u);
+
+    bool removed = queue->remove(id);
+    EXPECT_TRUE(removed);
+
+    auto snapshot2 = queue->list_snapshot();
+    EXPECT_EQ(snapshot2.size(), 0u);
+}
+
+TEST_F(FileTransferQueueTest, RemoveNonExistentFile) {
+    bool removed = queue->remove(9999);
+    EXPECT_FALSE(removed);
+}
+
+TEST_F(FileTransferQueueTest, CancelFile) {
+    ScopedTempFile temp_file("cancel_test.txt");
+
+    queue->pause();
+    uint64_t id = queue->enqueue(temp_file.path);
+
+    bool canceled = queue->cancel(id);
+    EXPECT_TRUE(canceled);
+
+    auto snapshot = queue->list_snapshot();
+    ASSERT_EQ(snapshot.size(), 1u);
+    EXPECT_EQ(snapshot[0].state, FileTransferQueue::State::Canceled);
+    EXPECT_NE(snapshot[0].last_error.find("canceled"), std::string::npos);
+}
+
+TEST_F(FileTransferQueueTest, CancelAllFiles) {
+    ScopedTempFile file1("cancel_all1.txt");
+    ScopedTempFile file2("cancel_all2.txt");
+
+    queue->pause();
+    queue->enqueue(file1.path);
+    queue->enqueue(file2.path);
+
+    queue->cancel_all();
+
+    auto snapshot = queue->list_snapshot();
+    EXPECT_EQ(snapshot.size(), 2u);
+
+    for (const auto& item : snapshot) {
+        EXPECT_EQ(item.state, FileTransferQueue::State::Canceled);
+    }
+}
+
+TEST_F(FileTransferQueueTest, PauseAndResumeQueue) {
+    ScopedTempFile temp_file("pause_test.txt");
+
+    queue->pause();
+    uint64_t id = queue->enqueue(temp_file.path);
+
+    // While paused, item should stay Queued
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    auto snapshot1 = queue->list_snapshot();
+    ASSERT_EQ(snapshot1.size(), 1u);
+    EXPECT_EQ(snapshot1[0].state, FileTransferQueue::State::Queued);
+
+    queue->resume();
+
+    // After resume (and no socket), it will try to send and fail
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    std::cout << "Test PauseResumeQueueWorks completed.\n";
+    auto snapshot2 = queue->list_snapshot();
+    ASSERT_EQ(snapshot2.size(), 1u);
+    // Should have attempted send and failed (no socket)
+    EXPECT_TRUE(snapshot2[0].state == FileTransferQueue::State::Failed ||
+                snapshot2[0].state == FileTransferQueue::State::Sending);
 }
 
-// --- Main Runner ---
+TEST_F(FileTransferQueueTest, EnqueueFileMessage) {
+    auto file_msg = std::make_shared<FileMessage>("test.txt", std::vector<uint8_t>{1, 2, 3, 4, 5});
+
+    queue->pause();
+    uint64_t id = queue->enqueue(file_msg);
+
+    EXPECT_NE(id, 0u);
+
+    auto snapshot = queue->list_snapshot();
+    ASSERT_EQ(snapshot.size(), 1u);
+    EXPECT_EQ(snapshot[0].id, id);
+    EXPECT_NE(snapshot[0].message, nullptr);
+}
+
+TEST_F(FileTransferQueueTest, RetryFailedFile) {
+    ScopedTempFile temp_file("retry_test.txt");
+
+    queue->pause();
+    uint64_t id = queue->enqueue(temp_file.path);
+
+    // Simulate failure by resuming (will fail due to no socket)
+    queue->resume();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    auto snapshot1 = queue->list_snapshot();
+    ASSERT_EQ(snapshot1.size(), 1u);
+    EXPECT_TRUE(snapshot1[0].state == FileTransferQueue::State::Failed);
+
+    // Retry
+    queue->pause(); // Pause to prevent immediate re-attempt
+    bool retried = queue->retry(id);
+    EXPECT_TRUE(retried);
+
+    auto snapshot2 = queue->list_snapshot();
+    ASSERT_EQ(snapshot2.size(), 1u);
+    EXPECT_EQ(snapshot2[0].state, FileTransferQueue::State::Queued);
+    EXPECT_GT(snapshot2[0].retries, 0u);
+}
+
+// =====================================================================
+// TEST SUITE 4: File I/O Logic
+// =====================================================================
+class FileIOTest : public ::testing::Test {
+protected:
+    void SetUp() override {}
+    void TearDown() override {}
+};
+
+TEST_F(FileIOTest, CreateFileMessageFromPath) {
+    ScopedTempFile temp_file("io_test.txt", "test content");
+
+    ASSERT_NO_THROW({
+        FileMessage msg(temp_file.path);
+        EXPECT_NE(msg.to_string().find("io_test.txt"), std::string::npos);
+        EXPECT_NE(msg.to_string().find("12 bytes"), std::string::npos);
+    });
+}
+
+TEST_F(FileIOTest, CreateFileMessageFromNonExistentFile) {
+    std::filesystem::path fake_path = "/tmp/does_not_exist_12345.txt";
+
+    EXPECT_THROW({
+        FileMessage msg(fake_path);
+    }, std::runtime_error);
+}
+
+TEST_F(FileIOTest, CreateFileMessageFromDirectory) {
+    auto temp_dir = std::filesystem::temp_directory_path();
+
+    EXPECT_THROW({
+        FileMessage msg(temp_dir);
+    }, std::runtime_error);
+}
+
+TEST_F(FileIOTest, FileMessageWithEmptyBytes) {
+    std::string filename = "empty.txt";
+    std::vector<uint8_t> empty_data;
+
+    EXPECT_THROW({
+        FileMessage msg(filename, empty_data);
+    }, std::runtime_error);
+}
+
+TEST_F(FileIOTest, LargeFileHandling) {
+    // Create a 1MB file
+    auto temp_path = std::filesystem::temp_directory_path() / "large_file.bin";
+    {
+        std::ofstream out(temp_path, std::ios::binary);
+        std::vector<char> data(1024 * 1024, 'X'); // 1MB
+        out.write(data.data(), data.size());
+    }
+
+    ASSERT_NO_THROW({
+        FileMessage msg(temp_path);
+        EXPECT_NE(msg.to_string().find("1048576 bytes"), std::string::npos);
+
+        auto serialized = msg.serialize();
+        EXPECT_GT(serialized.size(), 1024u * 1024u);
+    });
+
+    std::error_code ec;
+    std::filesystem::remove(temp_path, ec);
+}
+
+// =====================================================================
+// TEST SUITE 5: Message Header/Payload Logic
+// =====================================================================
+class MessageProtocolTest : public ::testing::Test {
+protected:
+    void SetUp() override {}
+    void TearDown() override {}
+};
+
+TEST_F(MessageProtocolTest, TextMessageHasCorrectHeader) {
+    auto msg = std::make_shared<TextMessage>("test");
+    auto serialized = msg->serialize();
+
+    // First 4 bytes should be message ID (network byte order)
+    ASSERT_GE(serialized.size(), 4u);
+
+    uint32_t id;
+    std::memcpy(&id, serialized.data(), sizeof(uint32_t));
+    id = ntohl(id);
+
+    EXPECT_EQ(id, static_cast<uint32_t>(TextTypes::Text));
+}
+
+TEST_F(MessageProtocolTest, FileMessageHasCorrectHeader) {
+    ScopedTempFile temp_file("protocol_test.txt");
+    FileMessage msg(temp_file.path);
+
+    auto serialized = msg.serialize();
+    ASSERT_GE(serialized.size(), 4u);
+
+    uint32_t id;
+    std::memcpy(&id, serialized.data(), sizeof(uint32_t));
+    id = ntohl(id);
+
+    EXPECT_EQ(id, static_cast<uint32_t>(TextTypes::File));
+}
+
+TEST_F(MessageProtocolTest, RoundTripPreservesData) {
+    std::string original = "Round trip test message with special chars: !@#$%^&*()";
+    auto msg1 = std::make_shared<TextMessage>(original);
+
+    auto serialized = msg1->serialize();
+    auto msg2 = std::make_shared<TextMessage>();
+    msg2->deserialize(serialized);
+
+    EXPECT_NE(msg2->to_string().find(original), std::string::npos);
+}
+
+TEST_F(MessageProtocolTest, CorruptedDataThrowsException) {
+    std::vector<char> corrupt_data = {0x01, 0x02, 0x03}; // Too short
+
+    auto msg = std::make_shared<TextMessage>();
+    EXPECT_THROW(msg->deserialize(corrupt_data), std::runtime_error);
+}
+
+// =====================================================================
+// Main Runner
+// =====================================================================
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

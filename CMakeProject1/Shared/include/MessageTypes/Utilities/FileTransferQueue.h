@@ -36,13 +36,21 @@ public:
 
     // === Enqueue Methods ===
 
-    // From a filesystem path (loads file from disk)
+    /**
+     * @brief Enqueue a file from a filesystem path (loads file from disk)
+     **/
     uint64_t enqueue(const std::filesystem::path& path);
 
-    // From an already-built FileMessage (useful when forwarding)
+    /**
+     * @brief Enqueue From an already-built FileMessage (useful when forwarding)
+     **/
     uint64_t enqueue(const std::shared_ptr<FileMessage>& message);
 
-    // From filename + in-memory bytes (builds FileMessage internally)
+    /**
+     * @brief Create a new FileMessage and enqueue
+     * @param filename name for the new file
+     * @param bytes byte data for the new file
+     **/
     uint64_t enqueue(const std::string& filename, const std::vector<uint8_t>& bytes);
 
     // === Control and Management ===

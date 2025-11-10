@@ -70,6 +70,11 @@ std::vector<char> FileMessage::serialize() const
 
 void FileMessage::deserialize(const std::vector<char>& data)
 {
+    if (data.size() < sizeof(uint32_t) + sizeof(uint64_t))
+    {
+        throw std::runtime_error("Message is too short in deserialzation");
+    }
+
     // Basic structural check
     if (data.size() < sizeof(uint32_t) + 3 * sizeof(uint64_t))
         throw std::runtime_error("Invalid FileMessage data (too short)");

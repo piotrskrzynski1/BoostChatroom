@@ -2,7 +2,7 @@
 #include "Server/CommandProcessor.h"
 #include <iostream>
 #include <functional> // For std::function
-#include <Server/ClientServerManager.h> // Need full def for methods
+#include <Server/ClientServerConnectionManager.h> // Need full def for methods
 
 #include "Interface/ICommand.h"
 
@@ -10,7 +10,7 @@
 namespace
 {
     // Type alias from your main.cpp
-    using CommandHandlerFunc = std::function<void(ClientServerManager&, const std::string&)>;
+    using CommandHandlerFunc = std::function<void(ClientServerConnectionManager&, const std::string&)>;
 
     /**
      * @brief A helper class that turns any std::function (like a lambda)
@@ -23,7 +23,7 @@ namespace
         {
         }
 
-        void execute(ClientServerManager& mng, const std::string& args) override
+        void execute(ClientServerConnectionManager& mng, const std::string& args) override
         {
             func_(mng, args);
         }
@@ -34,11 +34,10 @@ namespace
 
 
     // --- Concrete Command Classes ---
-
     class HelpCommand : public ICommand
     {
     public:
-        void execute(ClientServerManager& mng, const std::string& args) override
+        void execute(ClientServerConnectionManager& mng, const std::string& args) override
         {
             std::cout <<
                 "Available commands:\n"
@@ -59,7 +58,7 @@ namespace
     class PrintQueueCommand : public ICommand
     {
     public:
-        void execute(ClientServerManager& mng, const std::string& args) override
+        void execute(ClientServerConnectionManager& mng, const std::string& args) override
         {
             auto snap = mng.FileQueueSnapshot();
             if (snap.empty())
@@ -83,7 +82,7 @@ namespace
     class PrintHistoryCommand : public ICommand
     {
     public:
-        void execute(ClientServerManager& mng, const std::string& args) override
+        void execute(ClientServerConnectionManager& mng, const std::string& args) override
         {
             auto snap = mng.FileQueueSnapshot();
             bool found = false;
@@ -105,7 +104,7 @@ namespace
     class EnqueueFileCommand : public ICommand
     {
     public:
-        void execute(ClientServerManager& mng, const std::string& path) override
+        void execute(ClientServerConnectionManager& mng, const std::string& path) override
         {
             if (path.empty())
             {
@@ -130,7 +129,7 @@ namespace
     class CancelFileCommand : public ICommand
     {
     public:
-        void execute(ClientServerManager& mng, const std::string& args) override
+        void execute(ClientServerConnectionManager& mng, const std::string& args) override
         {
             try
             {
@@ -148,7 +147,7 @@ namespace
     class RetryFileCommand : public ICommand
     {
     public:
-        void execute(ClientServerManager& mng, const std::string& args) override
+        void execute(ClientServerConnectionManager& mng, const std::string& args) override
         {
             try
             {
@@ -181,27 +180,27 @@ CommandProcessor::CommandProcessor()
 
     // Simple commands implemented with our LambdaCommand helper
     commands_["/pause"] = std::make_unique<LambdaCommand>(
-        [](ClientServerManager& m, const std::string& a)
+        [](ClientServerConnectionManager& m, const std::string& a)
         {
             m.PauseQueue();
             std::cout << "Queue paused.\n";
         });
 
     commands_["/resume"] = std::make_unique<LambdaCommand>(
-        [](ClientServerManager& m, const std::string& a)
+        [](ClientServerConnectionManager& m, const std::string& a)
         {
             m.ResumeQueue();
             std::cout << "Queue resumed.\n";
         });
 
     commands_["/cancelall"] = std::make_unique<LambdaCommand>(
-        [](ClientServerManager& m, const std::string& a)
+        [](ClientServerConnectionManager& m, const std::string& a)
         {
             m.CancelAndReconnectFileSocket();
         });
 }
 
-bool CommandProcessor::process(ClientServerManager& mng, const std::string& line)
+bool CommandProcessor::process(ClientServerConnectionManager& mng, const std::string& line)
 {
     std::string command;
     std::string args;
