@@ -66,14 +66,18 @@ ClientServerConnectionManager::ClientServerConnectionManager(
         fileMessageReceiver_.set_on_file_callback(
             [this](const std::shared_ptr<tcp::socket>&, const std::shared_ptr<std::vector<char>>& rawData)
             {
-                if (on_file_message_ && rawData)
+                if (rawData)
                 {
                     try
                     {
                         // Deserialize the raw data into a FileMessage
                         auto fm = std::make_shared<FileMessage>();
                         fm->deserialize(*rawData);
-                        on_file_message_(fm); // Pass to application
+                        fm->save_file();
+                        if (on_file_message_)
+                        {
+                            on_file_message_(fm); // Pass to application
+                        }
                     }
                     catch (const std::exception& e)
                     {

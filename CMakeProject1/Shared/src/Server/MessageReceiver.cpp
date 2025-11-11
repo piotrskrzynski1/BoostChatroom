@@ -4,7 +4,6 @@
 #include <iostream>
 #include <MessageTypes/Utilities/HeaderHelper.hpp>
 #include <MessageTypes/Utilities/MessageFactory.h>
-
 #include "MessageTypes/File/FileMessage.h"
 
 #ifdef _DEBUG
@@ -104,7 +103,7 @@ void MessageReceiver::handle_read_message(
             if (on_message_text) on_message_text(socket, msg_str);
         }
         else if (auto fileMsg = dynamic_cast<FileMessage*>(message.get())) {
-            fileMsg->save_file(); // saves to disk
+
             std::cout << fileMsg->to_string() << std::endl;
             if (on_message_file) {
                 auto msg_bytes = std::make_shared<std::vector<char>>(message->serialize());

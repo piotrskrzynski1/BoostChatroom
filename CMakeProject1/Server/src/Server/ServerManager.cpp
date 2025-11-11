@@ -9,6 +9,7 @@
 
 using boost::asio::ip::tcp;
 
+
 #ifdef _DEBUG
 #define LOG(x) std::cout << "[DEBUG] " << x << std::endl
 #else
@@ -395,64 +396,82 @@ void ServerManager::SetStatusUP(bool status)
 
 void ServerManager::StopServer()
 {
-    std::cout << "Server stopping signal sent...\n";
+    // Check if already stopped
+    bool expected = true;
+    bool status = this->GetStatusUP();
+    if (!status) {
+        std::cout << "Server already stopped\n";
+        return;
+    }
+
+    std::cout << "Server stopping...\n";
     boost::system::error_code ec;
 
-    // 1. STOP THE IO_CONTEXT FIRST
-    // This tells all worker threads to return from io_context.run()
-    // and causes all pending async operations to complete with boost::asio::error::operation_aborted.
-    if (!io_context.stopped()) {
-        io_context.stop();
-    }
-
-    // NOTE: The worker threads are joined later in StartServer(), allowing them to safely exit.
-
-    // 2. CANCEL I/O OPERATIONS (Only acceptors need explicit cancel, socket closures will implicitly cancel reads)
-    // Acceptors must be cancelled and closed to unblock AcceptConnection calls
-    if (acceptor_) {
+    // 1. Stop accepting new connections FIRST
+    if (acceptor_ && acceptor_->is_open()) {
         acceptor_->cancel(ec);
+        if (ec && ec != boost::asio::error::operation_aborted) {
+            std::cerr << "Text acceptor cancel error: " << ec.message() << "\n";
+        }
         acceptor_->close(ec);
+        if (ec) {
+            std::cerr << "Text acceptor close error: " << ec.message() << "\n";
+        }
     }
 
-    if (file_acceptor_) {
+    if (file_acceptor_ && file_acceptor_->is_open()) {
         file_acceptor_->cancel(ec);
+        if (ec && ec != boost::asio::error::operation_aborted) {
+            std::cerr << "File acceptor cancel error: " << ec.message() << "\n";
+        }
         file_acceptor_->close(ec);
+        if (ec) {
+            std::cerr << "File acceptor close error: " << ec.message() << "\n";
+        }
     }
 
-    // 3. FORCE CLOSE ALL CLIENT SOCKETS (This guarantees all handlers have run/failed)
-    // NOTE: It is safe to close sockets here, even after io_context.stop(),
-    // because no new handlers will be dispatched.
+    // 2. Stop and clear all file queues BEFORE closing sockets
+    {
+        std::scoped_lock lk(file_queues_mutex_);
+        for (auto& [sock, queue] : file_queues_) {
+            if (queue) {
+                queue->stop(); // This must join the worker thread
+            }
+        }
+        file_queues_.clear();
+    }
 
-    // Close text clients
+    // 3. Close all client sockets
     {
         std::scoped_lock lk(text_port_clients_mutex_);
         for (const auto& s : text_port_clients_) {
             if (s && s->is_open()) {
-                boost::system::error_code ec2;
-                s->cancel(ec2); // Optional, but good practice
-                s->shutdown(tcp::socket::shutdown_both, ec2);
-                s->close(ec2);
+                s->cancel(ec);
+                s->shutdown(tcp::socket::shutdown_both, ec);
+                s->close(ec);
             }
         }
         text_port_clients_.clear();
     }
 
-    // Close file clients
-    // (Repeat the same cancellation/closing loop as above)
-
-    // Stop any per-socket file queues (their threads must be joined here)
     {
-        std::scoped_lock lk(file_queues_mutex_);
-        for (auto & [fst, snd] : file_queues_) {
-            if (snd) snd->stop(); // FileTransferQueue::stop() must join its worker_ thread.
+        std::scoped_lock lk(file_port_clients_mutex_);
+        for (const auto& s : file_port_clients_) {
+            if (s && s->is_open()) {
+                s->cancel(ec);
+                s->shutdown(tcp::socket::shutdown_both, ec);
+                s->close(ec);
+            }
         }
-        file_queues_.clear();
+        file_port_clients_.clear();
     }
 
-    // 4. Update status
+    // 4. NOW stop the io_context (after all async ops are cancelled)
+    if (!io_context.stopped()) {
+        io_context.stop();
+    }
     this->SetStatusUP(false);
-
-    // The threads will now exit StartServer() and safely join.
+    std::cout << "Server stopped successfully\n";
 }
 
 // Get the IP address from a socket
