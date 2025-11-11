@@ -17,9 +17,13 @@ A C++ console chatroom using Boost.Asio, built for Linux.
 
 *Chatroom running on Windows 11 with two clients connected. Client1 successfully sends a message to Client2 and vice versa.*
 
-<img width="1445" height="698" alt="image" src="https://github.com/user-attachments/assets/9aad37ba-afab-4749-8ecf-98d402ec92b6" />
+<img width="1581" height="765" alt="image" src="https://github.com/user-attachments/assets/5f4699d5-dfa0-408a-a285-8d515a8e2dc3" />
 
 *Simplified Project Structure overview.*
+
+<img width="1635" height="398" alt="image" src="https://github.com/user-attachments/assets/72d99e7c-decf-4ca3-9613-466662b23848" />
+
+*Message Structures*
 
 ## Requirements
 
@@ -29,7 +33,7 @@ A C++ console chatroom using Boost.Asio, built for Linux.
 - GTest Library
 - Ninja Build Tool
 
-## Example Installation Instructions Step-by-step
+## Example Installation Instructions Step-by-step (tested on ubuntu)
 1. Clone the repository:
    ```bash
    git clone https://github.com/piotrskrzynski1/BoostChatroom.git
@@ -52,7 +56,7 @@ You can also try using the build.sh bash script, it executes these commands one 
 2. Run the client application, provide info for the server you setup above
 3. Send messages by typing a message and pressing enter
 4. type /help for more commands (for example /file [path] to send a file to the server and other clients).
-5. The fun part is, if someone joins, he'll get your last 100 messages
+5. The fun part is, if someone joins, he'll get the last 100 messages sent to the server
 
 ## Class descriptions
 ### Server
