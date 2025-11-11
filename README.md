@@ -1,6 +1,6 @@
 # Boost Chatroom
 
-A C++ console chatroom using Boost.Asio, built for Windows/Linux.
+A C++ console chatroom using Boost.Asio, built for Linux.
 
 ## Features
 
