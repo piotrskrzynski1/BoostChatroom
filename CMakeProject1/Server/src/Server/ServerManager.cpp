@@ -86,7 +86,7 @@ void ServerManager::AcceptConnection(
     const std::shared_ptr<tcp::acceptor>& acceptor,
     std::vector<std::shared_ptr<tcp::socket>>& client_list,
     std::mutex& client_list_mutex,
-    MessageReciever& receiver,
+    MessageReceiver& receiver,
     bool sendGreeting, // <-- This is the control flag
     const TextTypes& clientType)
 {

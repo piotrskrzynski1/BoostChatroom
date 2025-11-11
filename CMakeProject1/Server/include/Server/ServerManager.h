@@ -4,7 +4,7 @@
 #include <MessageTypes/Interface/IMessage.hpp>
 #include <mutex>
 #include <vector>
-#include <Server/MessageReciever.h>
+#include <Server/MessageReceiver.h>
 #include <unordered_map>
 #include <memory>
 #include <filesystem>
@@ -32,8 +32,8 @@ private:
     std::mutex text_port_clients_mutex_;
     std::mutex file_port_clients_mutex_;
     //helper classes that recieve and parse data from sockets
-    MessageReciever messageReciever_;
-    MessageReciever fileReciever;
+    MessageReceiver messageReciever_;
+    MessageReceiver fileReciever;
 
     int port;
     int fileport;
@@ -109,7 +109,7 @@ public:
  */
     void AcceptConnection(const std::shared_ptr<tcp::acceptor>& acceptor,
                           std::vector<std::shared_ptr<tcp::socket>>& client_list, std::mutex& client_list_mutex,
-                          MessageReciever& receiver, bool sendGreeting, const TextTypes& clientType);
+                          MessageReceiver& receiver, bool sendGreeting, const TextTypes& clientType);
     int GetPort() const;
     int GetFilePort() const;
     bool GetStatusUP() const;

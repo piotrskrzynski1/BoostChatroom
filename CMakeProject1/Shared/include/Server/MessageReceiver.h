@@ -3,7 +3,7 @@
 #include <memory>
 #include <boost/asio.hpp>
 
-class MessageReciever
+class MessageReceiver
 {
 private:
     std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::string&)> on_message_text;

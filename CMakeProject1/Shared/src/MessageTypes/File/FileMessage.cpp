@@ -3,24 +3,18 @@
 #include <MessageTypes/File/FileMessage.h>
 #include <MessageTypes/Utilities/HeaderHelper.hpp>
 // from uint8_t bytes
-FileMessage::FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes)
+template <typename T>
+FileMessage::FileMessage(const std::string& filename, const std::vector<T>& bytes)
 {
-    if (bytes.empty()) {
+    static_assert(std::is_same_v<T, char> || std::is_same_v<T, uint8_t>,
+                  "FileMessage only accepts char or uint8_t vectors");
+    if (bytes.empty())
         throw std::runtime_error("Empty byte data for FileMessage: " + filename);
-    }
+
     filename_ = filename;
-    bytes_.assign(bytes.begin(), bytes.end());
+    bytes_.assign(bytes.begin(), bytes.end()); // works for both char & uint8_t
 }
 
-// from char bytes
-FileMessage::FileMessage(const std::string& filename, const std::vector<char>& bytes)
-{
-    if (bytes.empty()) {
-        throw std::runtime_error("Empty byte data for FileMessage: " + filename);
-    }
-    filename_ = filename;
-    bytes_ = bytes;
-}
 
 FileMessage::FileMessage(const std::filesystem::path& path)
 {
@@ -45,7 +39,7 @@ FileMessage::FileMessage(const std::filesystem::path& path)
 
 std::vector<char> FileMessage::serialize() const
 {
-    constexpr uint32_t id = static_cast<uint32_t>(TextTypes::File); // host order
+    constexpr auto id = static_cast<uint32_t>(TextTypes::File); // host order
     const uint64_t name_length = filename_.size();
     const uint64_t file_length = bytes_.size();
 
@@ -70,6 +64,7 @@ std::vector<char> FileMessage::serialize() const
 
 void FileMessage::deserialize(const std::vector<char>& data)
 {
+// TODO potential spam and memory overflow (we dont limit message size) (TODO also in MessageReciever.cpp)
     if (data.size() < sizeof(uint32_t) + sizeof(uint64_t))
     {
         throw std::runtime_error("Message is too short in deserialzation");
@@ -129,18 +124,18 @@ void FileMessage::save_file() const
             std::cerr << "No data to write!\n";
             return;
         }
-        fs::path output_dir = "/home/pioskr3459/Desktop";
-        if (!fs::exists(output_dir))
-            fs::create_directories(output_dir);
+        fs::path output_dir = get_desktop_path();
+        if (!fs::exists(output_dir)) fs::create_directories(output_dir);
+        fs::path safe_filename = fs::path(filename_).filename();
 
-        std::string filename = filename_.empty() ? "received_file.bin" : filename_;
-        fs::path output_path = output_dir / filename;
+        fs::path output_path = output_dir / safe_filename;
+
 
         std::ofstream out_file(output_path, std::ios::binary);
         if (!out_file)
             throw std::runtime_error("Cannot write file: " + output_path.string());
 
-        out_file.write(reinterpret_cast<const char*>(bytes_.data()), bytes_.size());
+        out_file.write(bytes_.data(), bytes_.size());
         out_file.close();
 
         // Optional: Keep this for actual errors/important info

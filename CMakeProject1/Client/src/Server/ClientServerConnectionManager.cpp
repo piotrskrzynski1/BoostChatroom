@@ -62,7 +62,7 @@ ClientServerConnectionManager::ClientServerConnectionManager(
             });
 
         // 2. Configure the FILE receiver
-        // (This assumes your MessageReciever class has set_on_file_callback, just like in your server)
+        // (This assumes your MessageReceiver class has set_on_file_callback, just like in your server)
         fileMessageReceiver_.set_on_file_callback(
             [this](const std::shared_ptr<tcp::socket>&, const std::shared_ptr<std::vector<char>>& rawData)
             {

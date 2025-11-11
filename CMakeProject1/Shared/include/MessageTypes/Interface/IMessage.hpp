@@ -33,5 +33,8 @@ public:
      * @brief Get a vector<char> object to send over the network.
      **/
     virtual std::vector<char> to_data_send() const = 0;
+    /**
+     * @brief Save file to desktop
+     */
     virtual void save_file() const = 0;
 };

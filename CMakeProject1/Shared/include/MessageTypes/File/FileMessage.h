@@ -5,6 +5,31 @@
 #include <string>
 #include <cstdint>
 
+#include <filesystem>
+#include <cstdlib>   // getenv
+#include <string>
+
+inline std::filesystem::path get_desktop_path()
+{
+    namespace fs = std::filesystem;
+
+#if defined(_WIN32)
+    const char* home = std::getenv("USERPROFILE");
+    if (!home)
+        throw std::runtime_error("USERPROFILE env variable not found");
+    return fs::path(home) / "Desktop";
+
+#elif defined(__APPLE__) || defined(__linux__)
+    const char* home = std::getenv("HOME");
+    if (!home)
+        throw std::runtime_error("HOME env variable not found");
+    return fs::path(home) / "Desktop";
+#else
+#error Unsupported system
+#endif
+}
+
+
 class FileMessage : public IMessage
 {
 private:
@@ -13,11 +38,10 @@ private:
 
 public:
     FileMessage() = default;
+    template <class T>
+    explicit FileMessage(const std::string& filename, const std::vector<T>& bytes);
     explicit FileMessage(const std::filesystem::path& path);
 
-    // construct directly from file data in memory
-    explicit FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes);
-    explicit FileMessage(const std::string& filename, const std::vector<char>& bytes);
 
     // Convert message to bytes to send over socket
     std::vector<char> serialize() const override;

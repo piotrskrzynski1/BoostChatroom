@@ -44,7 +44,6 @@ void TextMessage::deserialize(const std::vector<char>& data)
     {
         throw std::runtime_error("Message is too short in deserialzation");
     }
-    if (data.size() < sizeof(uint32_t) + sizeof(uint64_t)) return;
 
     uint32_t id;
     Utils::HeaderHelper::read_u32(data, 0, id);
@@ -53,7 +52,10 @@ void TextMessage::deserialize(const std::vector<char>& data)
     Utils::HeaderHelper::read_u64(data, sizeof(uint32_t), length);
 
     size_t offset = sizeof(uint32_t) + sizeof(uint64_t);
-    if (data.size() < offset + length) return;
+    if (data.size() < offset + length)
+    {
+        throw std::runtime_error("TextMessage:t runcated data");
+    };
 
     text_.assign(data.begin() + offset, data.begin() + offset + length);
 }

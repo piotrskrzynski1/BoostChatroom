@@ -1,4 +1,4 @@
-#include <Server/MessageReciever.h>
+#include <Server/MessageReceiver.h>
 #include <MessageTypes/Text/TextMessage.h>
 #include <cstring>
 #include <iostream>
@@ -28,7 +28,7 @@ static uint64_t ntohll(const uint64_t value)
 
 // ------------------------------------------------------------------
 
-void MessageReciever::start_read_body(const std::shared_ptr<std::vector<char>>& header_buffer,
+void MessageReceiver::start_read_body(const std::shared_ptr<std::vector<char>>& header_buffer,
                                       uint64_t body_length,
                                       const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
                                       const std::shared_ptr<std::string>& napis)
@@ -52,7 +52,7 @@ void MessageReciever::start_read_body(const std::shared_ptr<std::vector<char>>& 
         });
 }
 
-void MessageReciever::handle_read_message(
+void MessageReceiver::handle_read_message(
     const std::shared_ptr<std::vector<char>>& buffer,
     const boost::system::error_code& error,
     std::size_t bytes_transferred,
@@ -90,7 +90,11 @@ void MessageReciever::handle_read_message(
         // Create the correct message type
         auto type = static_cast<TextTypes>(id);
         std::unique_ptr<IMessage> message = MessageFactory::create_from_id(type);
-        message->deserialize(*buffer);
+        // Use only the bytes actually received
+        std::vector<char> data(buffer->begin(), buffer->begin() + bytes_transferred);
+        // Deserialize
+        message->deserialize(data);
+
 
 
         // Print and save depending on message type
@@ -122,9 +126,10 @@ void MessageReciever::handle_read_message(
 }
 
 
-void MessageReciever::start_read_header(std::shared_ptr<boost::asio::ip::tcp::socket> socket,
+void MessageReceiver::start_read_header(std::shared_ptr<boost::asio::ip::tcp::socket> socket,
                                         const std::shared_ptr<std::string>& napis)
 {
+    // TODO potential spam and memory overflow (we dont limit message size) (TODO also in FileMessage.cpp)
     constexpr size_t header_size = sizeof(uint32_t) + sizeof(uint64_t);
     auto header_buffer = std::make_shared<std::vector<char>>(header_size);
 
@@ -159,13 +164,13 @@ void MessageReciever::start_read_header(std::shared_ptr<boost::asio::ip::tcp::so
         });
 }
 
-void MessageReciever::set_on_message_callback(
+void MessageReceiver::set_on_message_callback(
     std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::string&)> callback)
 {
     on_message_text = std::move(callback);
 }
 
-void MessageReciever::set_on_file_callback(
+void MessageReceiver::set_on_file_callback(
     std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::shared_ptr<std::vector<char>>&)> callback)
 {
     on_message_file = std::move(callback);

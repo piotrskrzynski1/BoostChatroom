@@ -4,15 +4,15 @@
 #include <memory>
 #include <functional> //  For std::function
 #include <MessageTypes/Interface/IMessage.hpp>
-#include <Server/MessageReciever.h>
+#include <Server/MessageReceiver.h>
 #include <MessageTypes/Utilities/FileTransferQueue.h>
 #include <MessageTypes/File/FileMessage.h> // For the callback signature
 
 class ClientServerConnectionManager : public std::enable_shared_from_this<ClientServerConnectionManager>
 {
 private:
-    MessageReciever textMessageReceiver_;
-    MessageReciever fileMessageReceiver_;
+    MessageReceiver textMessageReceiver_;
+    MessageReceiver fileMessageReceiver_;
 
     std::shared_ptr<FileTransferQueue> file_queue_;
 
