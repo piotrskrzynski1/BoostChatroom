@@ -38,17 +38,7 @@ private:
 
 public:
     FileMessage() = default;
-    template <typename T>
-    FileMessage(const std::string& filename, const std::vector<T>& bytes)
-    {
-        static_assert(std::is_same_v<T, char> || std::is_same_v<T, uint8_t>,
-                      "FileMessage only accepts char or uint8_t vectors");
-        if (bytes.empty())
-            throw std::runtime_error("Empty byte data for FileMessage: " + filename);
-
-        filename_ = filename;
-        bytes_.assign(bytes.begin(), bytes.end()); // works for both char & uint8_t
-    }
+    explicit FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes);
     explicit FileMessage(const std::filesystem::path& path);
 
 

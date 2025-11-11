@@ -99,12 +99,9 @@ void MessageReceiver::handle_read_message(
         // Print and save depending on message type
         if (auto textMsg = dynamic_cast<TextMessage*>(message.get())) {
             std::string msg_str = textMsg->to_string();
-            std::cout << msg_str << std::endl;
             if (on_message_text) on_message_text(socket, msg_str);
         }
         else if (auto fileMsg = dynamic_cast<FileMessage*>(message.get())) {
-
-            std::cout << fileMsg->to_string() << std::endl;
             if (on_message_file) {
                 auto msg_bytes = std::make_shared<std::vector<char>>(message->serialize());
                 on_message_file(socket, msg_bytes);

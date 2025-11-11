@@ -4,7 +4,14 @@
 #include <MessageTypes/Utilities/HeaderHelper.hpp>
 // from uint8_t bytes
 
+FileMessage::FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes)
+{
+    if (bytes.empty())
+        throw std::runtime_error("Empty byte data for FileMessage: " + filename);
 
+    filename_ = filename;
+    bytes_.assign(bytes.begin(), bytes.end()); // works for both char & uint8_t
+}
 FileMessage::FileMessage(const std::filesystem::path& path)
 {
     if (!std::filesystem::exists(path)) {
@@ -105,7 +112,7 @@ std::vector<char> FileMessage::to_data_send() const
 }
 void FileMessage::save_file() const
 {
-    // std::cout << "[DEBUG] bytes_ size = " << bytes_.size() << "\n";  // REMOVED
+    // std::cout << "[DEBUG] bytes_ size = " << bytes_.size() << "\n"; // Still useful for debugging
 
     namespace fs = std::filesystem;
     try {
@@ -113,12 +120,41 @@ void FileMessage::save_file() const
             std::cerr << "No data to write!\n";
             return;
         }
+
+        // Assuming get_desktop_path() is defined elsewhere and returns an fs::path
         fs::path output_dir = get_desktop_path();
         if (!fs::exists(output_dir)) fs::create_directories(output_dir);
+
+        // Get the "safe" filename (e.g., "report.txt" from "/tmp/report.txt")
         fs::path safe_filename = fs::path(filename_).filename();
 
-        fs::path output_path = output_dir / safe_filename;
+        // --- NEW LOGIC TO FIND UNIQUE FILENAME ---
 
+        fs::path output_path = output_dir / safe_filename; // The initial path to check
+        int counter = 1;
+
+        // Deconstruct the original filename into its parts
+        // e.g., "report.txt" -> stem="report", extension=".txt"
+        // e.g., "README"     -> stem="README", extension=""
+        const fs::path original_stem = output_path.stem();
+        const fs::path original_extension = output_path.extension();
+
+        // Loop *while* the file path already exists
+        while (fs::exists(output_path))
+        {
+            // Create a new stem, e.g., "report(1)", "report(2)", etc.
+            std::string new_stem = original_stem.string() +
+                                   "(" + std::to_string(counter) + ")";
+
+            // Re-assemble the path.
+            // fs::path(new_stem) += original_extension handles both cases:
+            // "report(1)" + ".txt" -> "report(1).txt"
+            // "README(1)" + ""     -> "README(1)"
+            output_path = output_dir / (fs::path(new_stem) += original_extension);
+
+            counter++;
+        }
+        // --- END OF NEW LOGIC ---
 
         std::ofstream out_file(output_path, std::ios::binary);
         if (!out_file)
@@ -127,8 +163,8 @@ void FileMessage::save_file() const
         out_file.write(bytes_.data(), bytes_.size());
         out_file.close();
 
-        // Optional: Keep this for actual errors/important info
-        // std::cout << "File saved: " << output_path << " (" << bytes_.size() << " bytes)\n";
+        // This is now very useful, as it will print the *actual* name used
+        std::cout << "File saved: " << output_path << " (" << bytes_.size() << " bytes)\n";
     }
     catch (const std::exception& e) {
         std::cerr << "FileMessage::save_file error: " << e.what() << std::endl;

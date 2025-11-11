@@ -58,7 +58,10 @@ ClientServerConnectionManager::ClientServerConnectionManager(
         textMessageReceiver_.set_on_message_callback(
             [this](const std::shared_ptr<tcp::socket>&, const std::string& msg)
             {
-                if (on_text_message_) on_text_message_(msg); // Pass to application
+                if (msg.data())
+                {
+                    std::cout << msg << std::endl;
+                }
             });
 
         // 2. Configure the FILE receiver
@@ -73,6 +76,8 @@ ClientServerConnectionManager::ClientServerConnectionManager(
                         // Deserialize the raw data into a FileMessage
                         auto fm = std::make_shared<FileMessage>();
                         fm->deserialize(*rawData);
+                        std::string msg_str = fm->to_string();
+                        std::cout << msg_str << std::endl;
                         fm->save_file();
                         if (on_file_message_)
                         {
@@ -190,6 +195,12 @@ uint64_t ClientServerConnectionManager::EnqueueFile(const std::filesystem::path&
     if (!file_queue_)
     {
         std::cerr << "File queue not initialized\n";
+        return 0;
+    }
+
+    if (!std::filesystem::exists(path))
+    {
+        std::cerr << "File does not exist: " << path << std::endl;
         return 0;
     }
     return file_queue_->enqueue(path);
