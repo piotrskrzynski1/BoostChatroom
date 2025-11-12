@@ -18,8 +18,7 @@ public:
         std::shared_ptr<boost::asio::ip::tcp::socket>,
         std::shared_ptr<IMessage>)>;
 
-    void start_read_header(std::shared_ptr<boost::asio::ip::tcp::socket> socket,
-                          const std::shared_ptr<std::string>& napis = nullptr);
+    void start_read_header(std::shared_ptr<boost::asio::ip::tcp::socket> socket);
 
     /**
      * @brief Register a callback for a specific message type
@@ -31,14 +30,12 @@ public:
 private:
     void start_read_body(const std::shared_ptr<std::vector<char>>& header_buffer,
                         uint64_t body_length,
-                        const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
-                        const std::shared_ptr<std::string>& napis);
+                        const std::shared_ptr<boost::asio::ip::tcp::socket>& socket);
 
     void handle_read_message(const std::shared_ptr<std::vector<char>>& buffer,
                             const boost::system::error_code& error,
                             std::size_t bytes_transferred,
-                            const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
-                            const std::shared_ptr<std::string>& napis);
+                            const std::shared_ptr<boost::asio::ip::tcp::socket>& socket);
 
     // Map of message type -> callback
     std::unordered_map<TextTypes, MessageCallback> handlers_;

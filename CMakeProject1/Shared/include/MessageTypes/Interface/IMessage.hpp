@@ -8,6 +8,7 @@ enum class TextTypes : uint32_t
 {
     Text = 0,
     File = 1,
+    SendHistory = 2
 };
 
 class IMessage

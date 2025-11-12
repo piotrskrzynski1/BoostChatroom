@@ -32,6 +32,7 @@ private:
     std::vector<std::shared_ptr<tcp::socket>> file_port_clients_;
     std::mutex text_port_clients_mutex_;
     std::mutex file_port_clients_mutex_;
+
     //helper classes that recieve and parse data from sockets
     MessageReceiver messageReciever_;
     MessageReceiver fileReciever;
@@ -110,7 +111,7 @@ public:
  */
     void AcceptConnection(const std::shared_ptr<tcp::acceptor>& acceptor,
                           std::vector<std::shared_ptr<tcp::socket>>& client_list, std::mutex& client_list_mutex,
-                          MessageReceiver& receiver, bool sendGreeting, const TextTypes& clientType);
+                          MessageReceiver& receiver, bool sendGreeting);
     int GetPort() const;
     int GetFilePort() const;
     bool GetStatusUP() const;

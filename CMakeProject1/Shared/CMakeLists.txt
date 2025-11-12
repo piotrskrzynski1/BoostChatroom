@@ -16,7 +16,9 @@ add_library(Messages STATIC ${MESSAGE_SOURCES}
         src/MessageTypes/Utilities/MessageFactory.cpp
         include/MessageTypes/Utilities/MessageFactory.h
         src/MessageTypes/Utilities/FileTransferQueue.cpp
-        include/MessageTypes/Utilities/FileTransferQueue.h)
+        include/MessageTypes/Utilities/FileTransferQueue.h
+        src/MessageTypes/SendHistory/SendHistoryMessage.cpp
+        include/MessageTypes/SendHistory/SendHistoryMessage.h)
 
 target_include_directories(Messages PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

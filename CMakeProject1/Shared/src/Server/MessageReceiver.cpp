@@ -29,17 +29,16 @@ static uint64_t ntohll(const uint64_t value)
 
 void MessageReceiver::start_read_body(const std::shared_ptr<std::vector<char>>& header_buffer,
                                       uint64_t body_length,
-                                      const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
-                                      const std::shared_ptr<std::string>& napis)
+                                      const std::shared_ptr<boost::asio::ip::tcp::socket>& socket)
 {
     auto body_buffer = std::make_shared<std::vector<char>>(static_cast<size_t>(body_length));
 
     boost::asio::async_read(*socket, boost::asio::buffer(*body_buffer),
-        [header_buffer, body_buffer, this, socket, napis](const boost::system::error_code& err, std::size_t bytes_transferred)
+        [header_buffer, body_buffer, this, socket](const boost::system::error_code& err, std::size_t bytes_transferred)
         {
             if (err)
             {
-                handle_read_message(body_buffer, err, bytes_transferred, socket, napis);
+                handle_read_message(body_buffer, err, bytes_transferred, socket);
                 return;
             }
 
@@ -47,7 +46,7 @@ void MessageReceiver::start_read_body(const std::shared_ptr<std::vector<char>>& 
             fulldata->insert(fulldata->end(), body_buffer->begin(),
                              body_buffer->begin() + bytes_transferred);
 
-            handle_read_message(fulldata, boost::system::error_code(), fulldata->size(), socket, napis);
+            handle_read_message(fulldata, boost::system::error_code(), fulldata->size(), socket);
         });
 }
 
@@ -55,8 +54,8 @@ void MessageReceiver::handle_read_message(
     const std::shared_ptr<std::vector<char>>& buffer,
     const boost::system::error_code& error,
     std::size_t bytes_transferred,
-    const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
-    const std::shared_ptr<std::string>& napis)
+    const std::shared_ptr<boost::asio::ip::tcp::socket>& socket
+    )
 {
     if (error) {
         if (error == boost::asio::error::eof) {
@@ -112,8 +111,6 @@ void MessageReceiver::handle_read_message(
             #endif
         }
 
-        if (napis)
-            *napis = std::string(buffer->begin(), buffer->end());
     }
     catch (const std::exception& e) {
         std::cerr << "Deserialization error: " << e.what() << std::endl;
@@ -123,24 +120,23 @@ void MessageReceiver::handle_read_message(
 }
 
 
-void MessageReceiver::start_read_header(std::shared_ptr<boost::asio::ip::tcp::socket> socket,
-                                        const std::shared_ptr<std::string>& napis)
+void MessageReceiver::start_read_header(std::shared_ptr<boost::asio::ip::tcp::socket> socket)
 {
     // TODO potential spam and memory overflow (we dont limit message size) (TODO also in FileMessage.cpp)
     constexpr size_t header_size = sizeof(uint32_t) + sizeof(uint64_t);
     auto header_buffer = std::make_shared<std::vector<char>>(header_size);
 
     boost::asio::async_read(*socket, boost::asio::buffer(*header_buffer),
-        [header_buffer, this, socket, napis](const boost::system::error_code& err, std::size_t bytes_transferred)
+        [header_buffer, this, socket](const boost::system::error_code& err, std::size_t bytes_transferred)
         {
             if (err) {
-                handle_read_message(header_buffer, err, bytes_transferred, socket, napis);
+                handle_read_message(header_buffer, err, bytes_transferred, socket);
                 return;
             }
 
             if (bytes_transferred < header_size) {
                 boost::system::error_code ec = boost::asio::error::operation_aborted;
-                handle_read_message(header_buffer, ec, bytes_transferred, socket, napis);
+                handle_read_message(header_buffer, ec, bytes_transferred, socket);
                 return;
             }
 
@@ -152,12 +148,12 @@ void MessageReceiver::start_read_header(std::shared_ptr<boost::asio::ip::tcp::so
             body_length = ntohll(body_length);   // 64-bit conversion
 
             if (body_length != 0) {
-                start_read_body(header_buffer, body_length, socket, napis);
+                start_read_body(header_buffer, body_length, socket);
                 return;
             }
 
             handle_read_message(header_buffer, boost::system::error_code(),
-                                header_buffer->size(), socket, napis);
+                                header_buffer->size(), socket);
         });
 }
 

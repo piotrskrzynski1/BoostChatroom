@@ -7,6 +7,8 @@
 #include <MessageTypes/Text/TextMessage.h>
 #include <MessageTypes/File/FileMessage.h>
 
+#include "MessageTypes/SendHistory/SendHistoryMessage.h"
+
 using boost::asio::ip::tcp;
 
 
@@ -25,6 +27,7 @@ ServerManager::ServerManager(int port, int fileport, std::string&& ipAddress)
         << "\nText Port: " << port << "\nFile Port: " << this->fileport << std::endl;
 }
 
+
 std::string ServerManager::GetIpAddress() { return this->address; }
 int ServerManager::GetPort() const { return this->port; }
 
@@ -32,28 +35,138 @@ void ServerManager::StartServer()
 {
     // text message callback
     messageReciever_.register_handler(TextTypes::Text,
-        [this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
-        {
-            // Cast to specific type
-            auto textMsg = std::dynamic_pointer_cast<TextMessage>(msg);
-            if (textMsg) {
+                                      [this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
+                                      {
+                                          // Cast to specific type
+                                          auto textMsg = std::dynamic_pointer_cast<TextMessage>(msg);
+                                          if (textMsg)
+                                          {
 #ifdef _DEBUG
-                std::cout << textMsg->to_string() << std::endl;
+                                              std::cout << textMsg->to_string() << std::endl;
 #endif
-                this->Broadcast(sender, textMsg->to_string());
-            }
-        });
+                                              this->Broadcast(sender, textMsg->to_string());
+                                          }
+                                      });
 
     // filemessages callback
     fileReciever.register_handler(TextTypes::File,
-        [this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
+                                  [this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
+                                  {
+                                      auto fileMsg = std::dynamic_pointer_cast<FileMessage>(msg);
+                                      if (fileMsg)
+                                      {
+                                          auto rawData = std::make_shared<std::vector<char>>(msg->serialize());
+                                          this->Broadcast(sender, rawData);
+                                      }
+                                  });
+    //sendhistory callback
+    // Handler for SendHistory: when a client sends this to the text socket,
+    // server sends the stored history only to that client.
+    // SIMPLIFIED: SendHistory handler - send files only to requesting client's IP
+// In StartServer(), update the SendHistory handler:
+messageReciever_.register_handler(TextTypes::SendHistory,
+[this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
+{
+    if (!sender || !sender->is_open())
+        return;
+
+    // Cast to get the file port
+    auto histMsg = std::dynamic_pointer_cast<SendHistoryMessage>(msg);
+    if (!histMsg)
+    {
+        std::cerr << "SendHistory: failed to cast message\n";
+        return;
+    }
+
+    unsigned short client_file_port = histMsg->get_file_port();
+
+    // Get sender's IP
+    std::string sender_ip = GetSocketIP(sender);
+    if (sender_ip.empty())
+    {
+        std::cerr << "SendHistory: couldn't get sender IP\n";
+        return;
+    }
+
+    std::cout << "Client requested history from " << sender_ip
+              << " with file port " << client_file_port << std::endl;
+
+    // Begin sending history
+    boost::system::error_code ec;
+    SendMessage(sender, std::make_shared<TextMessage>("--- Begin Message History ---"), ec);
+
+    // Find the EXACT file socket matching IP AND port
+    std::shared_ptr<tcp::socket> matching_file_socket;
+    {
+        std::scoped_lock lk(file_port_clients_mutex_);
+        for (const auto& file_sock : file_port_clients_)
         {
-            auto fileMsg = std::dynamic_pointer_cast<FileMessage>(msg);
-            if (fileMsg) {
-                auto rawData = std::make_shared<std::vector<char>>(msg->serialize());
-                this->Broadcast(sender, rawData);
+            if (!file_sock || !file_sock->is_open()) continue;
+
+            boost::system::error_code ep_ec;
+            auto ep = file_sock->remote_endpoint(ep_ec);
+            if (ep_ec) continue;
+
+            std::string file_sock_ip = ep.address().to_string();
+            unsigned short file_sock_port = ep.port();
+
+            // Match by BOTH IP and port
+            if (file_sock_ip == sender_ip && file_sock_port == client_file_port)
+            {
+                matching_file_socket = file_sock;
+                std::cout << "Found matching file socket: " << file_sock_ip
+                         << ":" << file_sock_port << std::endl;
+                break;
             }
-        });
+        }
+    }
+
+    // Get the queue for this specific file socket
+    std::shared_ptr<FileTransferQueue> file_q = nullptr;
+    if (matching_file_socket && matching_file_socket->is_open())
+    {
+        file_q = GetOrCreateFileQueueForSocket(matching_file_socket);
+    }
+    else
+    {
+        std::cerr << "SendHistory: no file socket found for " << sender_ip
+                 << ":" << client_file_port << "\n";
+    }
+
+    // Send history
+    {
+        std::scoped_lock lock(history_mutex_);
+
+        for (const auto& msg_ptr : message_history_)
+        {
+            if (!msg_ptr)
+                continue;
+
+            if (auto text_msg = std::dynamic_pointer_cast<TextMessage>(msg_ptr))
+            {
+                boost::system::error_code sendErr;
+                SendMessage(sender, text_msg, sendErr);
+                if (sendErr)
+                    std::cerr << "SendHistory: error sending text: " << sendErr.message() << "\n";
+            }
+            else if (auto file_msg = std::dynamic_pointer_cast<FileMessage>(msg_ptr))
+            {
+                if (file_q)
+                {
+                    file_q->enqueue(file_msg);
+                }
+                else
+                {
+                    std::cerr << "SendHistory: skipping file (no queue)\n";
+                }
+            }
+        }
+    }
+
+    SendMessage(sender, std::make_shared<TextMessage>("--- End Message History ---"), ec);
+    std::cout << "History sent to " << sender_ip << ":" << client_file_port << std::endl;
+});
+
 
     try
     {
@@ -100,137 +213,88 @@ void ServerManager::AcceptConnection(
     std::vector<std::shared_ptr<tcp::socket>>& client_list,
     std::mutex& client_list_mutex,
     MessageReceiver& receiver,
-    bool sendGreeting, // <-- This is the control flag
-    const TextTypes& clientType)
+    bool sendGreeting)
 {
     auto socket = std::make_shared<tcp::socket>(io_context);
 
     acceptor->async_accept(*socket,
-                           [this, acceptor, socket, &client_list, &client_list_mutex, &receiver, sendGreeting,
-                               clientType]
-                       (const boost::system::error_code& error)
-                           {
-                               // Define error codes that indicate acceptor shutdown/cancellation
-                               const bool is_shutdown_error = (error == boost::asio::error::operation_aborted ||
-                                   error == boost::asio::error::bad_descriptor);
+        [this, acceptor, socket, &client_list, &client_list_mutex, &receiver, sendGreeting]
+        (const boost::system::error_code& error)
+        {
+            const bool is_shutdown_error = (error == boost::asio::error::operation_aborted ||
+                error == boost::asio::error::bad_descriptor);
 
-                               // 1. Handle error condition (Check and report UNEXPECTED errors)
-                               if (error)
-                               {
-                                   if (!is_shutdown_error)
-                                   {
-                                       std::cerr << "Accept error: " << error.message() << std::endl;
-                                   }
-                               }
+            if (error)
+            {
+                if (!is_shutdown_error)
+                {
+                    std::cerr << "Accept error: " << error.message() << std::endl;
+                }
+            }
 
-                               // 2. CRITICAL CHECK: Only proceed if the socket is valid AND open AND no major error occurred.
-                               // The is_shutdown_error check is technically redundant here because socket->is_open()
-                               // would likely be false, but it keeps the logic cleaner.
-                               if (!error && socket && socket->is_open())
-                               {
-                                   // Only proceed on NO error
+            if (!error && socket && socket->is_open())
+            {
+                // Add socket to client list
+                {
+                    std::scoped_lock lock(client_list_mutex);
+                    bool exists = std::any_of(client_list.begin(), client_list.end(),
+                        [&](const auto& s)
+                        {
+                            return s && s->native_handle() == socket->native_handle();
+                        });
+                    if (!exists) client_list.push_back(socket);
+                }
 
-                                   // --- CONNECTION ESTABLISHED: ADD TO LIST AND INITIATE RECEIVING ---
+                // Get client IP for logging
+                boost::system::error_code ec;
+                auto ep = socket->remote_endpoint(ec);
+                std::string client_ip = "unknown";
+                if (!ec)
+                {
+                    client_ip = ep.address().to_string() + ":" + std::to_string(ep.port());
+                }
 
-                                   // Add socket to client list, checking for duplicates using native_handle()
-                                   {
-                                       std::scoped_lock lock(client_list_mutex);
-                                       // Check if socket is already in the list.
-                                       bool exists = std::any_of(client_list.begin(), client_list.end(),
-                                                                 [&](const auto& s)
-                                                                 {
-                                                                     return s && s->native_handle() == socket->
-                                                                         native_handle();
-                                                                 });
-                                       if (!exists) client_list.push_back(socket);
-                                   }
+                // If this is a file socket, create its queue
+                if (&client_list == &file_port_clients_)
+                {
+                    GetOrCreateFileQueueForSocket(socket);
+                    std::cout << "File client connected from " << client_ip << std::endl;
+                }
+                else
+                {
+                    std::cout << "Text client connected from " << client_ip << std::endl;
+                }
 
-                                   // Determine if this is a file client and get/create its queue
-                                   std::shared_ptr<FileTransferQueue> file_q = nullptr;
-                                   if (&client_list == &file_port_clients_)
-                                   {
-                                       file_q = GetOrCreateFileQueueForSocket(socket);
-                                   }
+                // GREETING
+                if (sendGreeting)
+                {
+                    auto helloMessage = std::make_shared<TextMessage>("Hello client");
+                    boost::system::error_code sendErr;
+                    SendMessage(socket, helloMessage, sendErr);
+                    if (sendErr && sendErr != boost::asio::error::operation_aborted)
+                        std::cerr << "ERROR sending hello: " << sendErr.message() << std::endl;
+                }
 
-                                   // --- GREETING AND HISTORY ---
+                // Start receiving from this socket
+                receiver.start_read_header(socket);
+            }
 
-                                   if (sendGreeting)
-                                   {
-                                       auto helloMessage = std::make_shared<TextMessage>("Hello client");
-                                       boost::system::error_code sendErr;
-                                       SendMessage(socket, helloMessage, sendErr);
-                                       if (sendErr && sendErr != boost::asio::error::operation_aborted)
-                                           std::cerr << "ERROR sending hello: " << sendErr.message() << std::endl;
-                                   }
-
-                                   // BEGIN MESSAGE HISTORY SEND
-                                   std::deque<HistoryMessage> history_copy;
-                                   {
-                                       std::scoped_lock lock(history_mutex_);
-                                       history_copy = message_history_;
-                                   }
-
-                                   if (sendGreeting)
-                                   {
-                                       auto history_start_msg = std::make_shared<TextMessage>(
-                                           "--- Begin Message History ---");
-                                       SendMessage(socket, history_start_msg, boost::system::error_code{});
-                                   }
-
-                                   for (const auto& msg_ptr : history_copy)
-                                   {
-                                       if (auto text_msg = std::dynamic_pointer_cast<TextMessage>(msg_ptr))
-                                       {
-                                           if (sendGreeting)
-                                           {
-                                               boost::system::error_code sendErr;
-                                               SendMessage(socket, text_msg, sendErr);
-                                               if (sendErr) std::cerr << "HISTORY: send text err: " << sendErr.message()
-                                                   << "\n";
-                                           }
-                                       }
-                                       else if (auto file_msg = std::dynamic_pointer_cast<FileMessage>(msg_ptr))
-                                       {
-                                           if (file_q)
-                                           {
-                                               file_q->enqueue(file_msg);
-                                           }
-                                       }
-                                   }
-
-                                   if (sendGreeting)
-                                   {
-                                       auto history_end_msg = std::make_shared<TextMessage>(
-                                           "--- End Message History ---");
-                                       SendMessage(socket, history_end_msg, boost::system::error_code{});
-                                   }
-                                   // END MESSAGE HISTORY SEND
-
-                                   // Start receiving from this socket
-                                   receiver.start_read_header(socket, nullptr);
-                               }
-                               else
-                               {
-                                   // socket closed immediately or error occurred
-                               }
-
-                               // Re-arm accept if still running AND no shutdown error occurred
-                               if (!io_context.stopped() && !is_shutdown_error)
-                               {
-                                   AcceptConnection(acceptor, client_list, client_list_mutex, receiver, sendGreeting,
-                                                    clientType);
-                               }
-                           });
+            // Re-arm accept
+            if (!io_context.stopped() && !is_shutdown_error)
+            {
+                AcceptConnection(acceptor, client_list, client_list_mutex, receiver, sendGreeting);
+            }
+        });
 }
 
 void ServerManager::AcceptTextConnection(const std::shared_ptr<tcp::acceptor>& acceptor)
 {
-    AcceptConnection(acceptor, text_port_clients_, text_port_clients_mutex_, messageReciever_, true, TextTypes::Text);
+    AcceptConnection(acceptor, text_port_clients_, text_port_clients_mutex_, messageReciever_, false);
 }
 
 void ServerManager::AcceptFileConnection(const std::shared_ptr<tcp::acceptor>& acceptor)
 {
-    AcceptConnection(acceptor, file_port_clients_, file_port_clients_mutex_, fileReciever, false, TextTypes::Text);
+    AcceptConnection(acceptor, file_port_clients_, file_port_clients_mutex_, fileReciever, false);
 }
 
 std::shared_ptr<FileTransferQueue> ServerManager::GetOrCreateFileQueueForSocket(
@@ -360,7 +424,8 @@ void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender,
     {
         if (!clientSock || !clientSock->is_open()) continue;
 
-        // Send to everyone
+        // send to everyone except sender
+        if (sender && clientSock->native_handle() == sender->native_handle()) continue;
         boost::system::error_code sendErr;
         SendMessage(clientSock, text_log, sendErr);
         if (sendErr)

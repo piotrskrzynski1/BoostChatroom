@@ -11,11 +11,13 @@
 class ClientServerConnectionManager : public std::enable_shared_from_this<ClientServerConnectionManager>
 {
 private:
+    std::atomic<bool> askedforhistory = false;
     MessageReceiver textMessageReceiver_;
     MessageReceiver fileMessageReceiver_;
 
     std::shared_ptr<FileTransferQueue> file_queue_;
 
+    void try_request_history();
     /**
      * @brief Handles connection to a specified socket
      * @param error boost asio errors

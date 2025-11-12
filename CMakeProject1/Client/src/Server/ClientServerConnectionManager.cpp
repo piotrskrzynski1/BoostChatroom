@@ -5,7 +5,46 @@
 #include <iostream>
 #include <boost/asio.hpp>
 
+#include "MessageTypes/SendHistory/SendHistoryMessage.h"
+
 using boost::asio::ip::tcp;
+
+// add inside ClientServerConnectionManager class:
+void ClientServerConnectionManager::try_request_history()
+{
+    if (askedforhistory) return;
+
+    // ensure both sockets exist and are open
+    if (client_socket && client_socket->is_open()
+        && client_file_socket && client_file_socket->is_open())
+    {
+        // Get the local port of our file socket
+        boost::system::error_code ec;
+        auto local_ep = client_file_socket->local_endpoint(ec);
+        unsigned short file_port = 0;
+
+        if (!ec)
+        {
+            file_port = local_ep.port();
+            std::cout << "Requesting history with file port: " << file_port << std::endl;
+        }
+        else
+        {
+            std::cerr << "Failed to get file socket local port: " << ec.message() << std::endl;
+        }
+
+        auto histMsg = std::make_shared<SendHistoryMessage>(file_port);
+        boost::system::error_code err;
+        SendMessage(client_socket, histMsg, err);
+
+        if (err) {
+            std::cerr << "Failed to send SendHistoryMessage: " << err.message() << std::endl;
+        } else {
+            askedforhistory = true;
+        }
+    }
+}
+
 
 void ClientServerConnectionManager::handle_connect(
     const boost::system::error_code& error,
@@ -22,6 +61,7 @@ void ClientServerConnectionManager::handle_connect(
     std::cout << "Server IP: " << socket->remote_endpoint().address()
               << " | Port: " << socket->remote_endpoint().port() << std::endl;
 
+
     // Start the correct receiver for the correct socket
     if (socket_name == "TextSocket")
     {
@@ -29,8 +69,10 @@ void ClientServerConnectionManager::handle_connect(
     }
     else if (socket_name == "FileSocket")
     {
+        //ask for history at first connection
         fileMessageReceiver_.start_read_header(socket);
     }
+    try_request_history();
 }
 
 ClientServerConnectionManager::ClientServerConnectionManager(
@@ -220,6 +262,38 @@ void ClientServerConnectionManager::CancelAndReconnectFileSocket()
         else
             std::cout << "File socket closed to abort transfers.\n";
     }
+
+    // Preserve and re-register the handler to clear the receiver's stale state
+    auto file_handler = [this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
+    {
+        if (msg)
+        {
+            try
+            {
+                // Deserialize the raw data into a FileMessage
+                auto fm = std::dynamic_pointer_cast<FileMessage>(msg);
+                auto rawData = std::make_shared<std::vector<char>>(msg->serialize());
+                fm->deserialize(*rawData);
+
+                // Display info about the file
+                std::string msg_str = fm->to_string();
+                std::cout << msg_str << std::endl;
+
+                // Save the file to disk
+                fm->save_file();
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << "Client file deserialize error: " << e.what() << "\n";
+            }
+        }
+    };
+
+    // Re-create the receiver object to clear all its buffers and state
+    fileMessageReceiver_ = MessageReceiver();
+
+    // Re-register the handler on the new receiver instance
+    fileMessageReceiver_.register_handler(TextTypes::File, file_handler);
 
     // 4) create new socket and async_connect it.
     client_file_socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context_);
