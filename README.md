@@ -32,6 +32,7 @@ A C++ console chatroom using Boost.Asio, built for Linux.
 - Boost.Asio (installed via vcpkg)
 - GTest Library
 - Ninja Build Tool
+- CMake (3.1.0)
 
 ## Example Installation Instructions Step-by-step (tested on ubuntu)
 1. Clone the repository:
