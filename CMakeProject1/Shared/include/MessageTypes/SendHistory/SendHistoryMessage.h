@@ -1,5 +1,6 @@
 #pragma once
 #include "MessageTypes/Interface/IMessage.hpp"
+#include "MessageTypes/Text/TextMessage.h"
 
 class SendHistoryMessage : public IMessage
 {
@@ -17,4 +18,9 @@ public:
     std::string to_string() const override;
     std::vector<char> to_data_send() const override;
     void save_file() const override;
+
+    void dispatch_send(
+    const std::shared_ptr<boost::asio::ip::tcp::socket>& text_socket,
+    std::shared_ptr<FileTransferQueue> file_queue,
+    boost::system::error_code& ec) override;
 };

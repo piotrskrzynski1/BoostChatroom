@@ -139,27 +139,12 @@ messageReciever_.register_handler(TextTypes::SendHistory,
 
         for (const auto& msg_ptr : message_history_)
         {
-            if (!msg_ptr)
-                continue;
+            if (!msg_ptr) continue;
 
-            if (auto text_msg = std::dynamic_pointer_cast<TextMessage>(msg_ptr))
-            {
-                boost::system::error_code sendErr;
-                SendMessage(sender, text_msg, sendErr);
-                if (sendErr)
-                    std::cerr << "SendHistory: error sending text: " << sendErr.message() << "\n";
-            }
-            else if (auto file_msg = std::dynamic_pointer_cast<FileMessage>(msg_ptr))
-            {
-                if (file_q)
-                {
-                    file_q->enqueue(file_msg);
-                }
-                else
-                {
-                    std::cerr << "SendHistory: skipping file (no queue)\n";
-                }
-            }
+            boost::system::error_code sendErr;
+            msg_ptr->dispatch_send(sender, file_q, sendErr);
+            if (sendErr)
+                std::cerr << "SendHistory: error sending message: " << sendErr.message() << "\n";
         }
     }
 

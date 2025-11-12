@@ -10,6 +10,8 @@
 #include <string>
 
 
+class FileTransferQueue;
+
 class FileMessage : public IMessage
 {
 private:
@@ -33,4 +35,9 @@ public:
     // Optional: save the file upon recieving
     void save_file() const override;
 
+    // New dispatch method using visitor pattern
+    void dispatch_send(
+    const std::shared_ptr<boost::asio::ip::tcp::socket>& text_socket,
+    std::shared_ptr<FileTransferQueue> file_queue,
+    boost::system::error_code& ec) override;
 };

@@ -3,8 +3,10 @@
 #include <string>
 #include <vector>
 
+#include "Server/MessageSender.h"
 
-class TextMessage final : public IMessage
+
+class TextMessage : public IMessage
 {
 public:
     TextMessage() = default;
@@ -17,6 +19,10 @@ public:
     std::vector<char> to_data_send() const override;
     void save_file() const override;
 
+    void dispatch_send(
+    const std::shared_ptr<boost::asio::ip::tcp::socket>& text_socket,
+    std::shared_ptr<FileTransferQueue> file_queue,
+    boost::system::error_code& ec) override;
 private:
     std::vector<char> text_;
 };

@@ -1,7 +1,7 @@
 #include "MessageTypes/SendHistory/SendHistoryMessage.h"
 #include <stdexcept>
 #include "MessageTypes/Utilities/HeaderHelper.hpp"
-
+#include <iostream>
 // In MessageTypes/SendHistory/SendHistoryMessage.cpp
 // In MessageTypes/SendHistory/SendHistoryMessage.cpp
 
@@ -72,4 +72,8 @@ std::vector<char> SendHistoryMessage::to_data_send() const
 void SendHistoryMessage::save_file() const
 {
     // nic a nic
+}
+void SendHistoryMessage::dispatch_send(const std::shared_ptr<boost::asio::ip::tcp::socket>& text_socket, std::shared_ptr<FileTransferQueue> file_queue, boost::system::error_code& ec)
+{
+    std::cerr << "Sendhistorymessage shouldnt be dispatched" << std::endl;
 }

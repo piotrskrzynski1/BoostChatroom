@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <thread>
 #include "MessageTypes/File/FileMessage.h" // for constructing FileMessage directly
-
 using boost::asio::ip::tcp;
 
 FileTransferQueue::FileTransferQueue(SocketGetter socket_getter)

@@ -3,6 +3,8 @@
 #include <iostream>
 #include <boost/asio/buffer.hpp>
 
+#include "Server/MessageSender.h"
+
 #if defined(_WIN32) || defined(_WIN64)
 #include <winsock2.h>
 #else
@@ -76,4 +78,12 @@ std::vector<char> TextMessage::to_data_send() const
 void TextMessage::save_file() const
 {
     //no need to save text i guess
+}
+
+void TextMessage::dispatch_send(
+    const std::shared_ptr<boost::asio::ip::tcp::socket>& text_socket,
+    std::shared_ptr<FileTransferQueue> file_queue,
+    boost::system::error_code& ec)
+{
+    SendMessage(text_socket, shared_from_this(), ec);
 }

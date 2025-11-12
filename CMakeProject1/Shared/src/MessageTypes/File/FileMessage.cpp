@@ -2,7 +2,8 @@
 #include <iostream>
 #include <MessageTypes/File/FileMessage.h>
 #include <MessageTypes/Utilities/HeaderHelper.hpp>
-
+#include "MessageTypes/Utilities/FileTransferQueue.h"
+#include "MessageTypes/File/FileMessage.h"
 // from uint8_t bytes
 FileMessage::FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes)
 {
@@ -190,3 +191,19 @@ void FileMessage::save_file() const
     }
 }
 
+void FileMessage::dispatch_send(
+    const std::shared_ptr<boost::asio::ip::tcp::socket>& text_socket,
+    std::shared_ptr<FileTransferQueue> file_queue,
+    boost::system::error_code& ec)
+{
+    if (file_queue)
+    {
+        // Downcast from IMessage to FileMessage
+        auto file_msg = std::static_pointer_cast<FileMessage>(shared_from_this());
+        file_queue->enqueue(file_msg);
+    }
+    else
+    {
+        ec = boost::system::errc::make_error_code(boost::system::errc::invalid_argument);
+    }
+}

@@ -4,6 +4,8 @@
 #include <boost/asio/ip/tcp.hpp>
 #include "Server/MessageReceiver.h"
 
+class FileTransferQueue;
+
 enum class TextTypes : uint32_t
 {
     Text = 0,
@@ -11,7 +13,7 @@ enum class TextTypes : uint32_t
     SendHistory = 2
 };
 
-class IMessage
+class IMessage : public std::enable_shared_from_this<IMessage>
 {
 public:
     virtual ~IMessage() = default;
@@ -40,4 +42,8 @@ public:
      */
     virtual void save_file() const = 0;
 
+    virtual void dispatch_send(
+    const std::shared_ptr<boost::asio::ip::tcp::socket>& text_socket,
+    std::shared_ptr<FileTransferQueue> file_queue,
+    boost::system::error_code& ec) = 0;
 };
