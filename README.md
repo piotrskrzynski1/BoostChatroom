@@ -15,13 +15,13 @@ A C++ console chatroom using Boost.Asio, built for Linux.
 
 <img width="2091" height="1273" alt="background" src="https://github.com/user-attachments/assets/cfdbbf94-85dd-41ba-81db-70733cba069b" />
 
-*Chatroom running on Windows 11 with two clients connected. Client1 successfully sends a message to Client2 and vice versa.*
+*Older version of the Chatroom running on Windows 11 (now linux only) with two clients connected. Client1 successfully sends a message to Client2 and vice versa.*
 
-<img width="1581" height="765" alt="image" src="https://github.com/user-attachments/assets/5f4699d5-dfa0-408a-a285-8d515a8e2dc3" />
+<img width="1599" height="773" alt="image" src="https://github.com/user-attachments/assets/3772c4f8-7949-42ea-a6f8-3aaf2d1b9f0f" />
 
 *Simplified Project Structure overview.*
 
-<img width="1635" height="398" alt="image" src="https://github.com/user-attachments/assets/72d99e7c-decf-4ca3-9613-466662b23848" />
+<img width="1628" height="533" alt="image" src="https://github.com/user-attachments/assets/aeb9d755-d42d-4375-9fd5-44c3a6d22d4d" />
 
 *Message Structures*
 
@@ -93,6 +93,10 @@ You can also try using the build.sh bash script, it executes these commands one 
 ## Issues
 The program currently doesnt care about file size or text size, this is on purpose to not restrict users, although it can lead to crashes. Can be fixed by checking clients header and verifying that the size part is correct
 The Tests don't cover connection testing, they only cover logical tests (for example if serialize()/deserialize() correctly process data)
+Complete lack of security i guess :/
+No encryption (useful if using public wifi!!!), no error codes (useful in space!!!)
+What happens when client sends a fake header?
+
 ## OPTIONAL: firewall problems
 
 When you run the server and want incoming traffic to not get filtered run these commands if you have an active firewall on Ubuntu.
