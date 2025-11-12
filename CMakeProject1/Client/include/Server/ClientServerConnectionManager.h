@@ -26,8 +26,7 @@ private:
                         const std::string& socket_name,
                         const std::shared_ptr<boost::asio::ip::tcp::socket>& socket);
 
-    std::function<void(const std::string&)> on_text_message_;
-    std::function<void(std::shared_ptr<FileMessage>)> on_file_message_;
+
 
 protected:
     boost::asio::ip::tcp::endpoint endpoint;
@@ -71,13 +70,4 @@ public:
     * @param id id of the file held by the FileTransferQueue
     **/
     void RetryFile(uint64_t id) const;
-
-    /**
-     * @brief Specifies a callback function which happens when a text message is recieved
-     **/
-    void set_on_text_message_callback(std::function<void(const std::string&)> cb);
-    /**
-    * @brief Specifies a callback function which happens when a file message is recieved
-    **/
-    void set_on_file_message_callback(std::function<void(std::shared_ptr<FileMessage>)> cb);
 };

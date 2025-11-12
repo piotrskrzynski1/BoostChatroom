@@ -66,10 +66,10 @@ private:
     // === Helpers ===
 
     // Build a FileMessage from a file path (disk)
-    std::shared_ptr<FileMessage> make_file_message(const std::filesystem::path& p);
+    static std::shared_ptr<FileMessage> make_file_message(const std::filesystem::path& p);
 
     // Build a FileMessage directly from raw bytes (for forwarding)
-    std::shared_ptr<FileMessage> make_file_message_from_bytes(
+    static std::shared_ptr<FileMessage> make_file_message_from_bytes(
         const std::string& filename,
         const std::vector<uint8_t>& bytes);
 

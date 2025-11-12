@@ -1,10 +1,10 @@
 #include <Server/MessageReceiver.h>
 #include <MessageTypes/Text/TextMessage.h>
+#include <MessageTypes/File/FileMessage.h>
 #include <cstring>
 #include <iostream>
 #include <MessageTypes/Utilities/HeaderHelper.hpp>
 #include <MessageTypes/Utilities/MessageFactory.h>
-#include "MessageTypes/File/FileMessage.h"
 
 #ifdef _DEBUG
 #define LOG(x) std::cout << "[DEBUG] " << x << std::endl
@@ -61,12 +61,16 @@ void MessageReceiver::handle_read_message(
     if (error) {
         if (error == boost::asio::error::eof) {
             std::cout << "Client closed the connection.\n";
-        } else if (error == boost::asio::error::operation_aborted)
+            return;
+        }
+        if (error == boost::asio::error::operation_aborted)
         {
             std::cout << "connection canceled.\n" << std::endl;
+            return;
         }
-        else {
+        if (error) {
             std::cerr << "Read error: " << error.message() << std::endl;
+            return;
         }
 
         if (socket->is_open())
@@ -89,26 +93,23 @@ void MessageReceiver::handle_read_message(
         // Create the correct message type
         auto type = static_cast<TextTypes>(id);
         std::unique_ptr<IMessage> message = MessageFactory::create_from_id(type);
+
         // Use only the bytes actually received
-        std::vector<char> data(buffer->begin(), buffer->begin() + bytes_transferred);
+        const std::vector<char> data(buffer->begin(), buffer->begin() + bytes_transferred);
+
         // Deserialize
         message->deserialize(data);
 
-
-
-        // Print and save depending on message type
-        if (auto textMsg = dynamic_cast<TextMessage*>(message.get())) {
-            std::string msg_str = textMsg->to_string();
-            if (on_message_text) on_message_text(socket, msg_str);
-        }
-        else if (auto fileMsg = dynamic_cast<FileMessage*>(message.get())) {
-            if (on_message_file) {
-                auto msg_bytes = std::make_shared<std::vector<char>>(message->serialize());
-                on_message_file(socket, msg_bytes);
-            }
-        }
-        else {
-            std::cerr << "Unknown message type after factory: ID " << id << std::endl;
+        // Look up and invoke the registered handler for this message type
+        auto it = handlers_.find(type);
+        if (it != handlers_.end() && it->second) {
+            // Convert unique_ptr to shared_ptr for the callback
+            std::shared_ptr<IMessage> msg_shared(message.release());
+            it->second(socket, msg_shared);
+        } else {
+            #ifdef _DEBUG
+            std::cerr << "No handler registered for message type: " << id << std::endl;
+            #endif
         }
 
         if (napis)
@@ -160,14 +161,7 @@ void MessageReceiver::start_read_header(std::shared_ptr<boost::asio::ip::tcp::so
         });
 }
 
-void MessageReceiver::set_on_message_callback(
-    std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::string&)> callback)
+void MessageReceiver::register_handler(TextTypes type, MessageCallback callback)
 {
-    on_message_text = std::move(callback);
-}
-
-void MessageReceiver::set_on_file_callback(
-    std::function<void(std::shared_ptr<boost::asio::ip::tcp::socket>, const std::shared_ptr<std::vector<char>>&)> callback)
-{
-    on_message_file = std::move(callback);
+    handlers_[type] = std::move(callback);
 }

@@ -2,8 +2,8 @@
 #include <iostream>
 #include <MessageTypes/File/FileMessage.h>
 #include <MessageTypes/Utilities/HeaderHelper.hpp>
-// from uint8_t bytes
 
+// from uint8_t bytes
 FileMessage::FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes)
 {
     if (bytes.empty())
@@ -31,6 +31,27 @@ FileMessage::FileMessage(const std::filesystem::path& path)
     if (!file) throw std::runtime_error("Failed to read full file: " + path.string());
 
     filename_ = path.filename().string();
+}
+
+std::filesystem::path FileMessage::get_desktop_path()
+{
+    namespace fs = std::filesystem;
+
+#if defined(_WIN32)
+    const char* home = std::getenv("USERPROFILE");
+    if (!home)
+        throw std::runtime_error("USERPROFILE env variable not found");
+    return fs::path(home) / "Desktop";
+
+#elif defined(__APPLE__) || defined(__linux__)
+    const char* home = std::getenv("HOME");
+    if (!home)
+        throw std::runtime_error("HOME env variable not found");
+    return fs::path(home) / "Desktop";
+#else
+#error Unsupported system
+    throw std::runtime_error("UNSUPPORTED SYSTEM")
+#endif
 }
 
 std::vector<char> FileMessage::serialize() const
@@ -128,7 +149,6 @@ void FileMessage::save_file() const
         // Get the "safe" filename (e.g., "report.txt" from "/tmp/report.txt")
         fs::path safe_filename = fs::path(filename_).filename();
 
-        // --- NEW LOGIC TO FIND UNIQUE FILENAME ---
 
         fs::path output_path = output_dir / safe_filename; // The initial path to check
         int counter = 1;
@@ -154,7 +174,6 @@ void FileMessage::save_file() const
 
             counter++;
         }
-        // --- END OF NEW LOGIC ---
 
         std::ofstream out_file(output_path, std::ios::binary);
         if (!out_file)
@@ -163,7 +182,7 @@ void FileMessage::save_file() const
         out_file.write(bytes_.data(), bytes_.size());
         out_file.close();
 
-        // This is now very useful, as it will print the *actual* name used
+        // print
         std::cout << "File saved: " << output_path << " (" << bytes_.size() << " bytes)\n";
     }
     catch (const std::exception& e) {

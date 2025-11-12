@@ -75,4 +75,5 @@ std::vector<char> TextMessage::to_data_send() const
 
 void TextMessage::save_file() const
 {
+    //no need to save text i guess
 }

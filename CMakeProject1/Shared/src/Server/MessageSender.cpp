@@ -1,4 +1,4 @@
-#include <Server/ServerMessageSender.h>
+#include <Server/MessageSender.h>
 #include <boost/asio.hpp>
 #include <MessageTypes/Interface/IMessage.hpp>
 #include <MessageTypes/Text/TextMessage.h>
@@ -10,7 +10,7 @@
 #define LOG(x) ((void)0)
 #endif
 
-void Utils::SendMessage(const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
+void SendMessage(const std::shared_ptr<boost::asio::ip::tcp::socket>& socket,
                         const std::shared_ptr<IMessage>& message,
                         const boost::system::error_code& error)
 {

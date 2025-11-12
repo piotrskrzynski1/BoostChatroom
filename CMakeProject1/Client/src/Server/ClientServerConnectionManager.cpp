@@ -1,7 +1,7 @@
 #include <Server/ClientServerConnectionManager.h>
 #include <MessageTypes/Text/TextMessage.h>
 #include <MessageTypes/File/FileMessage.h>
-#include <Server/ServerMessageSender.h>
+#include <Server/MessageSender.h>
 #include <iostream>
 #include <boost/asio.hpp>
 
@@ -46,7 +46,7 @@ ClientServerConnectionManager::ClientServerConnectionManager(
         client_socket = std::make_shared<tcp::socket>(io_context_);
         client_file_socket = std::make_shared<tcp::socket>(io_context_);
 
-        // Create file queue (this was correct)
+        // Create file queue
         file_queue_ = std::make_shared<FileTransferQueue>([this]() -> std::shared_ptr<boost::asio::ip::tcp::socket>
         {
             return this->client_file_socket;
@@ -55,34 +55,36 @@ ClientServerConnectionManager::ClientServerConnectionManager(
         // Configure the callbacks for both receiver instances
 
         // 1. Configure the TEXT receiver
-        textMessageReceiver_.set_on_message_callback(
-            [this](const std::shared_ptr<tcp::socket>&, const std::string& msg)
+        // Now we just need to set the callback that TextMessage.handle() will invoke
+        textMessageReceiver_.register_handler(TextTypes::Text,
+        [this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
             {
-                if (msg.data())
-                {
-                    std::cout << msg << std::endl;
-                }
+                // Display the message
+                const auto textMsg = std::dynamic_pointer_cast<TextMessage>(msg);
+                std::cout << textMsg->to_string() << std::endl;
+
             });
 
         // 2. Configure the FILE receiver
-        // (This assumes your MessageReceiver class has set_on_file_callback, just like in your server)
-        fileMessageReceiver_.set_on_file_callback(
-            [this](const std::shared_ptr<tcp::socket>&, const std::shared_ptr<std::vector<char>>& rawData)
+        // Now we just need to set the callback that FileMessage.handle() will invoke
+        fileMessageReceiver_.register_handler(TextTypes::File,
+        [this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
             {
-                if (rawData)
+                if (msg)
                 {
                     try
                     {
                         // Deserialize the raw data into a FileMessage
-                        auto fm = std::make_shared<FileMessage>();
+                        auto fm = std::dynamic_pointer_cast<FileMessage>(msg);
+                        auto rawData = std::make_shared<std::vector<char>>(msg->serialize());
                         fm->deserialize(*rawData);
+
+                        // Display info about the file
                         std::string msg_str = fm->to_string();
                         std::cout << msg_str << std::endl;
+
+                        // Save the file to disk
                         fm->save_file();
-                        if (on_file_message_)
-                        {
-                            on_file_message_(fm); // Pass to application
-                        }
                     }
                     catch (const std::exception& e)
                     {
@@ -111,20 +113,7 @@ ClientServerConnectionManager::ClientServerConnectionManager(
     }
 }
 
-// Implementation for callback setters
-void ClientServerConnectionManager::set_on_text_message_callback(
-    std::function<void(const std::string&)> cb)
-{
-    on_text_message_ = std::move(cb);
-}
 
-void ClientServerConnectionManager::set_on_file_message_callback(
-    std::function<void(std::shared_ptr<FileMessage>)> cb)
-{
-    on_file_message_ = std::move(cb);
-}
-
-// --- The rest of your methods are unchanged ---
 void ClientServerConnectionManager::Disconnect() const
 {
     auto disconnect_socket = [](const std::shared_ptr<tcp::socket>& sock, const std::string& name)
@@ -162,7 +151,7 @@ void ClientServerConnectionManager::Message(const TextTypes type, const std::sha
     case TextTypes::Text:
         if (client_socket && client_socket->is_open())
         {
-            Utils::SendMessage(client_socket, message, err);
+            SendMessage(client_socket, message, err);
         }
         else
         {
@@ -173,7 +162,7 @@ void ClientServerConnectionManager::Message(const TextTypes type, const std::sha
     case TextTypes::File:
         if (client_file_socket && client_file_socket->is_open())
         {
-            Utils::SendMessage(client_file_socket, message, err);
+            SendMessage(client_file_socket, message, err);
         }
         else
         {

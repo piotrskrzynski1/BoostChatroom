@@ -1,7 +1,7 @@
 #include <Server/ServerManager.h>
 #include <iostream>
 #include <thread>
-#include <Server/ServerMessageSender.h>
+#include <Server/MessageSender.h>
 #include <algorithm>
 #include <boost/asio.hpp>
 #include <MessageTypes/Text/TextMessage.h>
@@ -30,21 +30,29 @@ int ServerManager::GetPort() const { return this->port; }
 
 void ServerManager::StartServer()
 {
-    // Text messages callback
-    messageReciever_.set_on_message_callback(
-        [this](const std::shared_ptr<tcp::socket>& sender, const std::string& msg)
+    // text message callback
+    messageReciever_.register_handler(TextTypes::Text,
+        [this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
         {
+            // Cast to specific type
+            auto textMsg = std::dynamic_pointer_cast<TextMessage>(msg);
+            if (textMsg) {
 #ifdef _DEBUG
-            std::cout << msg << std::endl;
+                std::cout << textMsg->to_string() << std::endl;
 #endif
-            this->Broadcast(sender, msg);
+                this->Broadcast(sender, textMsg->to_string());
+            }
         });
 
-    // File messages callback (use vector<char> to avoid truncation)
-    fileReciever.set_on_file_callback(
-        [this](const std::shared_ptr<tcp::socket>& sender, const std::shared_ptr<std::vector<char>>& rawData)
+    // filemessages callback
+    fileReciever.register_handler(TextTypes::File,
+        [this](const std::shared_ptr<tcp::socket>& sender, std::shared_ptr<IMessage> msg)
         {
-            this->Broadcast(sender, rawData);
+            auto fileMsg = std::dynamic_pointer_cast<FileMessage>(msg);
+            if (fileMsg) {
+                auto rawData = std::make_shared<std::vector<char>>(msg->serialize());
+                this->Broadcast(sender, rawData);
+            }
         });
 
     try
@@ -150,7 +158,7 @@ void ServerManager::AcceptConnection(
                                    {
                                        auto helloMessage = std::make_shared<TextMessage>("Hello client");
                                        boost::system::error_code sendErr;
-                                       Utils::SendMessage(socket, helloMessage, sendErr);
+                                       SendMessage(socket, helloMessage, sendErr);
                                        if (sendErr && sendErr != boost::asio::error::operation_aborted)
                                            std::cerr << "ERROR sending hello: " << sendErr.message() << std::endl;
                                    }
@@ -166,7 +174,7 @@ void ServerManager::AcceptConnection(
                                    {
                                        auto history_start_msg = std::make_shared<TextMessage>(
                                            "--- Begin Message History ---");
-                                       Utils::SendMessage(socket, history_start_msg, boost::system::error_code{});
+                                       SendMessage(socket, history_start_msg, boost::system::error_code{});
                                    }
 
                                    for (const auto& msg_ptr : history_copy)
@@ -176,7 +184,7 @@ void ServerManager::AcceptConnection(
                                            if (sendGreeting)
                                            {
                                                boost::system::error_code sendErr;
-                                               Utils::SendMessage(socket, text_msg, sendErr);
+                                               SendMessage(socket, text_msg, sendErr);
                                                if (sendErr) std::cerr << "HISTORY: send text err: " << sendErr.message()
                                                    << "\n";
                                            }
@@ -194,7 +202,7 @@ void ServerManager::AcceptConnection(
                                    {
                                        auto history_end_msg = std::make_shared<TextMessage>(
                                            "--- End Message History ---");
-                                       Utils::SendMessage(socket, history_end_msg, boost::system::error_code{});
+                                       SendMessage(socket, history_end_msg, boost::system::error_code{});
                                    }
                                    // END MESSAGE HISTORY SEND
 
@@ -354,7 +362,7 @@ void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender,
 
         // Send to everyone
         boost::system::error_code sendErr;
-        Utils::SendMessage(clientSock, text_log, sendErr);
+        SendMessage(clientSock, text_log, sendErr);
         if (sendErr)
         {
             std::cerr << "ERROR sending file log to client: " << sendErr.message() << std::endl;
@@ -404,7 +412,7 @@ void ServerManager::Broadcast(const std::shared_ptr<tcp::socket>& sender, const 
         if (sender && clientSock->native_handle() == sender->native_handle()) continue;
 
         boost::system::error_code sendErr;
-        Utils::SendMessage(clientSock, msg, sendErr);
+        SendMessage(clientSock, msg, sendErr);
         if (sendErr) std::cerr << "ERROR sending to client: " << sendErr.message() << std::endl;
     }
 }

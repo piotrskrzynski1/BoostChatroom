@@ -9,26 +9,6 @@
 #include <cstdlib>   // getenv
 #include <string>
 
-inline std::filesystem::path get_desktop_path()
-{
-    namespace fs = std::filesystem;
-
-#if defined(_WIN32)
-    const char* home = std::getenv("USERPROFILE");
-    if (!home)
-        throw std::runtime_error("USERPROFILE env variable not found");
-    return fs::path(home) / "Desktop";
-
-#elif defined(__APPLE__) || defined(__linux__)
-    const char* home = std::getenv("HOME");
-    if (!home)
-        throw std::runtime_error("HOME env variable not found");
-    return fs::path(home) / "Desktop";
-#else
-#error Unsupported system
-#endif
-}
-
 
 class FileMessage : public IMessage
 {
@@ -36,6 +16,7 @@ private:
     std::vector<char> bytes_;
     std::string filename_;
 
+    static std::filesystem::path get_desktop_path();
 public:
     FileMessage() = default;
     explicit FileMessage(const std::string& filename, const std::vector<uint8_t>& bytes);
@@ -51,4 +32,5 @@ public:
     [[nodiscard]] std::vector<char> to_data_send() const override;
     // Optional: save the file upon recieving
     void save_file() const override;
+
 };

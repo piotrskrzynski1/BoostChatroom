@@ -1,7 +1,8 @@
 #pragma once
-#include <cstdint>
 #include <vector>
 #include <string>
+#include <boost/asio/ip/tcp.hpp>
+#include "Server/MessageReceiver.h"
 
 enum class TextTypes : uint32_t
 {
@@ -37,4 +38,5 @@ public:
      * @brief Save file to desktop
      */
     virtual void save_file() const = 0;
+
 };
