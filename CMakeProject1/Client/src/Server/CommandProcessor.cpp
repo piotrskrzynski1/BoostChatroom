@@ -8,30 +8,6 @@
 // --- Anonymous Namespace to hide concrete command classes ---
 namespace
 {
-    // Type alias from your main.cpp
-    using CommandHandlerFunc = std::function<void(ClientServerConnectionManager&, const std::string&)>;
-
-    /**
-     * @brief A helper class that turns any std::function (like a lambda)
-     * into an ICommand object. This is perfect for your simple commands.
-     */
-    class LambdaCommand : public ICommand
-    {
-    public:
-        LambdaCommand(CommandHandlerFunc func) : func_(std::move(func))
-        {
-        }
-
-        void execute(ClientServerConnectionManager& mng, const std::string& args) override
-        {
-            func_(mng, args);
-        }
-
-    private:
-        CommandHandlerFunc func_;
-    };
-
-
     // --- Concrete Command Classes ---
     class HelpCommand : public ICommand
     {
@@ -160,6 +136,34 @@ namespace
             }
         }
     };
+    class PauseQueueCommand : public ICommand
+    {
+    public:
+        void execute(ClientServerConnectionManager& mng, const std::string& args) override
+        {
+            mng.PauseQueue();
+            std::cout << "Queue paused.\n";
+        }
+    };
+
+    class ResumeQueueCommand : public ICommand
+    {
+    public:
+        void execute(ClientServerConnectionManager& mng, const std::string& args) override
+        {
+            mng.ResumeQueue();
+            std::cout << "Queue resumed.\n";
+        }
+    };
+
+    class CancelAllCommand : public ICommand
+    {
+    public:
+        void execute(ClientServerConnectionManager& mng, const std::string& args) override
+        {
+            mng.CancelAndReconnectFileSocket();
+        }
+    };
 } // end anonymous namespace
 
 
@@ -175,27 +179,9 @@ CommandProcessor::CommandProcessor()
     commands_["/file"] = std::make_unique<EnqueueFileCommand>();
     commands_["/cancel"] = std::make_unique<CancelFileCommand>();
     commands_["/retry"] = std::make_unique<RetryFileCommand>();
-
-    // Simple commands implemented with our LambdaCommand helper
-    commands_["/pause"] = std::make_unique<LambdaCommand>(
-        [](ClientServerConnectionManager& m, const std::string& a)
-        {
-            m.PauseQueue();
-            std::cout << "Queue paused.\n";
-        });
-
-    commands_["/resume"] = std::make_unique<LambdaCommand>(
-        [](ClientServerConnectionManager& m, const std::string& a)
-        {
-            m.ResumeQueue();
-            std::cout << "Queue resumed.\n";
-        });
-
-    commands_["/cancelall"] = std::make_unique<LambdaCommand>(
-        [](ClientServerConnectionManager& m, const std::string& a)
-        {
-            m.CancelAndReconnectFileSocket();
-        });
+    commands_["/pause"] = std::make_unique<PauseQueueCommand>();
+    commands_["/resume"] = std::make_unique<ResumeQueueCommand>();
+    commands_["/cancelall"] = std::make_unique<CancelAllCommand>();
 }
 
 bool CommandProcessor::process(ClientServerConnectionManager& mng, const std::string& line)

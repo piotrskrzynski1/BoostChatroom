@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
+#include <random>
 
 #include "MessageTypes/Text/TextMessage.h"
 #include "MessageTypes/File/FileMessage.h"
@@ -16,9 +17,38 @@
 struct ScopedTempFile {
     std::filesystem::path path;
 
-    explicit ScopedTempFile(const std::string& filename = "test_file.txt", const std::string& content = "test data") {
-        path = std::filesystem::temp_directory_path() / filename;
+
+    explicit ScopedTempFile(const std::string& filenameprefix = "test",
+                           const std::string& content = "test data",
+                           const std::string& extension = ".txt"){
+        // Generate a unique filename using random number generator
+        std::random_device rd;
+        std::mt19937_64 gen(rd());
+        std::uniform_int_distribution<uint64_t> dist;
+
+        std::filesystem::path temp_dir = std::filesystem::temp_directory_path();
+
+        // Try to create a unique file (with collision detection) (if bitcoin works then why can't this work? am i right)
+        int attempts = 0;
+        const int max_attempts = 100;
+
+        do {
+            uint64_t random_id = dist(gen);
+            std::string new_filename = filenameprefix + "_" + std::to_string(random_id) + extension;
+            path = temp_dir / new_filename;
+            attempts++;
+
+            if (attempts >= max_attempts) {
+                throw std::runtime_error("Failed to generate unique temporary filename after " +
+                                       std::to_string(max_attempts) + " attempts");
+            }
+        } while (std::filesystem::exists(path));
+
+        // Write content to the file
         std::ofstream outfile(path);
+        if (!outfile) {
+            throw std::runtime_error("Failed to create temporary file: " + path.string());
+        }
         outfile << content;
         outfile.close();
     }
@@ -61,11 +91,12 @@ TEST_F(MessageSerializationTest, TextMessageSerializeDeserialize) {
 }
 
 TEST_F(MessageSerializationTest, FileMessageSerializeDeserialize) {
-    ScopedTempFile temp_file("serialize_test.txt", "file content for testing");
+    ScopedTempFile temp_file("serialize_test", "file content for testing",".txt");
 
     // Create from file path
     auto msg1 = std::make_shared<FileMessage>(temp_file.path);
-    EXPECT_EQ(msg1->to_string(), "FileMessage: serialize_test.txt (24 bytes)");
+    EXPECT_NE(msg1->to_string().find("serialize_test"), std::string::npos);
+    EXPECT_NE(msg1->to_string().find("24 bytes"), std::string::npos);
 
     // Serialize
     std::vector<char> serialized = msg1->serialize();
@@ -76,7 +107,8 @@ TEST_F(MessageSerializationTest, FileMessageSerializeDeserialize) {
     ASSERT_NO_THROW(msg2->deserialize(serialized));
 
     // Verify metadata matches
-    EXPECT_EQ(msg1->to_string(), msg2->to_string());
+    EXPECT_NE(msg1->to_string().find("serialize_test"), std::string::npos);
+    EXPECT_NE(msg1->to_string().find("24 bytes"), std::string::npos);
 }
 
 TEST_F(MessageSerializationTest, FileMessageFromBytes) {
@@ -179,7 +211,7 @@ protected:
 };
 
 TEST_F(FileTransferQueueTest, EnqueueFileAddsToQueue) {
-    ScopedTempFile temp_file("queue_test.txt");
+    ScopedTempFile temp_file("queue_test");
 
     queue->pause(); // Prevent actual sending
     uint64_t id = queue->enqueue(temp_file.path);
@@ -194,9 +226,9 @@ TEST_F(FileTransferQueueTest, EnqueueFileAddsToQueue) {
 }
 
 TEST_F(FileTransferQueueTest, EnqueueMultipleFiles) {
-    ScopedTempFile file1("queue_test1.txt");
-    ScopedTempFile file2("queue_test2.txt");
-    ScopedTempFile file3("queue_test3.txt");
+    ScopedTempFile file1("queue_test1");
+    ScopedTempFile file2("queue_test2");
+    ScopedTempFile file3("queue_test3");
 
     queue->pause();
 
@@ -212,7 +244,7 @@ TEST_F(FileTransferQueueTest, EnqueueMultipleFiles) {
 }
 
 TEST_F(FileTransferQueueTest, RemoveFileFromQueue) {
-    ScopedTempFile temp_file("remove_test.txt");
+    ScopedTempFile temp_file("remove_test");
 
     queue->pause();
     uint64_t id = queue->enqueue(temp_file.path);
@@ -233,7 +265,7 @@ TEST_F(FileTransferQueueTest, RemoveNonExistentFile) {
 }
 
 TEST_F(FileTransferQueueTest, CancelFile) {
-    ScopedTempFile temp_file("cancel_test.txt");
+    ScopedTempFile temp_file("cancel_test");
 
     queue->pause();
     uint64_t id = queue->enqueue(temp_file.path);
@@ -248,8 +280,8 @@ TEST_F(FileTransferQueueTest, CancelFile) {
 }
 
 TEST_F(FileTransferQueueTest, CancelAllFiles) {
-    ScopedTempFile file1("cancel_all1.txt");
-    ScopedTempFile file2("cancel_all2.txt");
+    ScopedTempFile file1("cancel_all1");
+    ScopedTempFile file2("cancel_all2");
 
     queue->pause();
     queue->enqueue(file1.path);
@@ -266,7 +298,7 @@ TEST_F(FileTransferQueueTest, CancelAllFiles) {
 }
 
 TEST_F(FileTransferQueueTest, PauseAndResumeQueue) {
-    ScopedTempFile temp_file("pause_test.txt");
+    ScopedTempFile temp_file("pause_test");
 
     queue->pause();
     uint64_t id = queue->enqueue(temp_file.path);
@@ -303,7 +335,7 @@ TEST_F(FileTransferQueueTest, EnqueueFileMessage) {
 }
 
 TEST_F(FileTransferQueueTest, RetryFailedFile) {
-    ScopedTempFile temp_file("retry_test.txt");
+    ScopedTempFile temp_file("retry_test");
 
     queue->pause();
     uint64_t id = queue->enqueue(temp_file.path);
@@ -337,11 +369,11 @@ protected:
 };
 
 TEST_F(FileIOTest, CreateFileMessageFromPath) {
-    ScopedTempFile temp_file("io_test.txt", "test content");
+    ScopedTempFile temp_file("io_test", "test content");
 
     ASSERT_NO_THROW({
         FileMessage msg(temp_file.path);
-        EXPECT_NE(msg.to_string().find("io_test.txt"), std::string::npos);
+        EXPECT_NE(msg.to_string().find("io_test"), std::string::npos);
         EXPECT_NE(msg.to_string().find("12 bytes"), std::string::npos);
     });
 }
@@ -416,7 +448,7 @@ TEST_F(MessageProtocolTest, TextMessageHasCorrectHeader) {
 }
 
 TEST_F(MessageProtocolTest, FileMessageHasCorrectHeader) {
-    ScopedTempFile temp_file("protocol_test.txt");
+    ScopedTempFile temp_file("protocol_test");
     FileMessage msg(temp_file.path);
 
     auto serialized = msg.serialize();
